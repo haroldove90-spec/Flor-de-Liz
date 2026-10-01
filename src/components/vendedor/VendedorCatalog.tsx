@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Package,
   Search,
@@ -22,7 +22,14 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
 
-  const categories = ['all', 'Lirios', 'Rosas', 'Eventos', 'Tulipanes', 'Orquídeas', 'Girasoles'];
+  // Dynamically derive categories from products
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    return ['all', ...Array.from(set)];
+  }, [products]);
 
   const filtered = products.filter((p) => {
     const matchesSearch =
@@ -49,11 +56,16 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-stone-200/80">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#1B1A18] tracking-tight">
-            Catálogo Comercial Sincronizado
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#1B1A18] tracking-tight">
+              Catálogo Comercial de Suministros Médicos
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#C9B368]/20 text-[#1B1A18]">
+              {products.length} disponibles
+            </span>
+          </div>
           <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-            Selecciona productos para armar pedidos de clientes en tiempo real
+            Selecciona material de curación y suministros para levantar pedidos de clientes
           </p>
         </div>
 
@@ -63,7 +75,7 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white text-xs sm:text-sm font-bold shadow-md transition cursor-pointer self-start sm:self-auto"
           >
             <ShoppingCart className="w-4 h-4 text-[#C9B368]" />
-            Ver Carrito ({cartItemCount}) • ${cartTotal.toFixed(2)}
+            Ver Carrito ({cartItemCount}) • ${cartTotal.toFixed(2)} MXN
           </button>
         )}
       </div>
@@ -74,7 +86,7 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
           <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Buscar por flor, SKU o características..."
+            placeholder="Buscar por aguja, jeringa, gasa, alcohol, SKU o nombre..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] focus:outline-none focus:border-[#C9B368]"
@@ -82,7 +94,7 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {categories.map((cat) => (
+          {categories.slice(0, 10).map((cat) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
@@ -100,13 +112,19 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
 
       {/* Products Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filtered.length === 0 ? (
+        {products.length === 0 ? (
+          <div className="col-span-full py-16 text-center bg-white rounded-3xl border border-stone-200 p-8 space-y-2">
+            <Package className="w-12 h-12 text-stone-300 mx-auto mb-2" />
+            <p className="text-base font-bold text-stone-800">Catálogo actualmente vacío</p>
+            <p className="text-xs text-stone-500 max-w-md mx-auto">
+              El administrador puede cargar la lista de precios de suministros médicos desde el módulo de Catálogo en el rol Admin.
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-stone-200">
             <Package className="w-12 h-12 text-stone-300 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-stone-700">Sin productos disponibles</p>
-            <p className="text-xs text-stone-400 mt-1">
-              No coinciden los filtros con el catálogo actual.
-            </p>
+            <p className="text-sm font-semibold text-stone-700">Sin productos con este criterio de búsqueda</p>
+            <p className="text-xs text-stone-400 mt-1">Prueba con otro término o categoría.</p>
           </div>
         ) : (
           filtered.map((prod) => {
@@ -144,16 +162,18 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
                     )}
                   </div>
 
-                  <div className="p-4 space-y-2">
+                  <div className="p-4 space-y-1.5">
                     <div className="flex items-center justify-between text-[11px] text-stone-500">
-                      <span>{prod.category}</span>
+                      <span className="truncate max-w-[130px] font-medium">{prod.category}</span>
                       <span className={prod.stock < 5 ? 'text-red-600 font-bold' : ''}>
                         Stock: {prod.stock} disp.
                       </span>
                     </div>
 
-                    <h3 className="text-sm font-bold text-[#1B1A18] line-clamp-1">{prod.name}</h3>
-                    <p className="text-xs text-stone-500 line-clamp-2 leading-relaxed">
+                    <h3 className="text-xs sm:text-sm font-bold text-[#1B1A18] line-clamp-2 leading-tight">
+                      {prod.name}
+                    </h3>
+                    <p className="text-[11px] text-stone-500 line-clamp-2 leading-relaxed">
                       {prod.description}
                     </p>
 
@@ -174,10 +194,10 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
                 <div className="p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center justify-between gap-2">
                   {inCartCount > 0 ? (
                     <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200">
-                      {inCartCount} en carrito
+                      {inCartCount} en pedido
                     </span>
                   ) : (
-                    <span className="text-[11px] text-stone-400">Entrega inmediata</span>
+                    <span className="text-[11px] text-stone-400">Entrega rápida</span>
                   )}
 
                   <button
@@ -222,7 +242,7 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
               </span>
             </div>
             <div className="text-left">
-              <p className="text-[11px] text-stone-300 uppercase tracking-wide">Listo para Checkout</p>
+              <p className="text-[11px] text-stone-300 uppercase tracking-wide">Listo para Levantar Pedido</p>
               <p className="text-xs sm:text-sm font-bold text-white">${cartTotal.toFixed(2)} MXN</p>
             </div>
           </button>

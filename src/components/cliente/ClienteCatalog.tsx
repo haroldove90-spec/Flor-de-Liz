@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ShoppingBag,
   Search,
@@ -8,6 +8,7 @@ import {
   Sparkles,
   Tag,
   Check,
+  Package,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Product } from '../../types';
@@ -32,11 +33,18 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [addedId, setAddedId] = useState<string | null>(null);
 
-  const categories = ['all', 'Lirios', 'Rosas', 'Eventos', 'Tulipanes', 'Orquídeas', 'Girasoles'];
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    return ['all', ...Array.from(set)];
+  }, [products]);
 
   const filtered = products.filter((p) => {
     const matchesSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
+      p.code.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
     const matchesCat = selectedCategory === 'all' || p.category === selectedCategory;
     return matchesSearch && matchesCat;
@@ -49,7 +57,6 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
   };
 
   const handleInstantWhatsAppBuy = (product: Product) => {
-    // Fast buy single item
     const order = createOrder({
       clientId: clienteProfile.id || 'cli_direct',
       clientName: clienteProfile.name || 'Cliente Flor de Líz',
@@ -67,22 +74,21 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
 
   return (
     <div className="space-y-6 pb-24">
-      {/* Hero Banner for Client */}
+      {/* Hero Banner for Medical Client */}
       <div className="p-6 sm:p-8 rounded-3xl bg-[#1B1A18] text-white relative overflow-hidden shadow-xl border border-stone-800">
         <div className="relative z-10 max-w-xl space-y-2">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C9B368]/20 text-[#C9B368] font-bold text-xs uppercase tracking-wider">
             <Sparkles className="w-3.5 h-3.5" />
-            Catálogo Exclusivo Flor de Líz
+            Catálogo de Suministros Médicos & Curación
           </span>
           <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-white font-serif">
-            Arreglos Florales de Alta Gama
+            Material de Curación e Insumos Médicos
           </h1>
           <p className="text-xs sm:text-sm text-stone-300 leading-relaxed">
-            Flores frescas seleccionadas de exportación. Realiza tu pedido directamente a nuestro WhatsApp oficial con entrega programada o express.
+            Insumos hospitalarios, jeringas, agujas, gasas, suturas y soluciones para consultorios, clínicas, hospitales y público en general.
           </p>
         </div>
 
-        {/* Decorative subtle background icon */}
         <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/4 opacity-10 pointer-events-none">
           <img
             src="https://appdesignproyectos.com/floricono.png"
@@ -98,7 +104,7 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
           <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Buscar lirios, rosas, tulipanes, arreglos..."
+            placeholder="Buscar por aguja, jeringa, gasa, alcohol, solución, SKU..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] focus:outline-none focus:border-[#C9B368]"
@@ -106,7 +112,7 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {categories.map((cat) => (
+          {categories.slice(0, 10).map((cat) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
@@ -124,11 +130,19 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
 
       {/* Product Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-        {filtered.length === 0 ? (
+        {products.length === 0 ? (
+          <div className="col-span-full py-16 text-center bg-white rounded-3xl border border-stone-200 p-8 space-y-2">
+            <Package className="w-12 h-12 text-stone-300 mx-auto mb-2" />
+            <p className="text-base font-bold text-stone-800">Catálogo en proceso de carga</p>
+            <p className="text-xs text-stone-500 max-w-md mx-auto">
+              El administrador está sincronizando la lista de suministros médicos y material de curación.
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-stone-200">
             <ShoppingBag className="w-12 h-12 text-stone-300 mx-auto mb-2" />
             <p className="text-sm font-semibold text-stone-700">No hay productos en esta categoría</p>
-            <p className="text-xs text-stone-400 mt-1">Explora otras categorías de nuestra colección floral.</p>
+            <p className="text-xs text-stone-400 mt-1">Explora otras secciones de nuestro catálogo médico.</p>
           </div>
         ) : (
           filtered.map((prod) => {
@@ -157,9 +171,11 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
                     </span>
                   </div>
 
-                  <div className="p-4 space-y-2">
-                    <h3 className="text-sm font-bold text-[#1B1A18] line-clamp-1">{prod.name}</h3>
-                    <p className="text-xs text-stone-500 line-clamp-2 leading-relaxed">
+                  <div className="p-4 space-y-1.5">
+                    <h3 className="text-xs sm:text-sm font-bold text-[#1B1A18] line-clamp-2 leading-tight">
+                      {prod.name}
+                    </h3>
+                    <p className="text-[11px] text-stone-500 line-clamp-2 leading-relaxed">
                       {prod.description}
                     </p>
 

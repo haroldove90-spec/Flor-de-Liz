@@ -14,55 +14,109 @@ import {
   AlertCircle,
   X,
   Filter,
+  CloudUpload,
+  CloudDownload,
+  ClipboardPaste,
+  Sparkles,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Product } from '../../types';
-import { downloadExcelTemplate, parseExcelProducts } from '../../utils/excelImport';
+import {
+  downloadMedicalExcelTemplate,
+  parseExcelProducts,
+  parseRawMedicalPriceList,
+  getPlaceholderImageForCategory,
+} from '../../utils/excelImport';
 
 export const AdminCatalog: React.FC = () => {
-  const { products, addProduct, updateProduct, deleteProduct, importProductsList } = useApp();
+  const {
+    products,
+    addProduct,
+    updateProduct,
+    deleteProduct,
+    importProductsList,
+    importAnalyzedMedicalCatalog,
+    uploadProductsToSupabase,
+    fetchProductsFromSupabase,
+    supabaseConfig,
+  } = useApp();
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [showModal, setShowModal] = useState(false);
+  const [showPasteModal, setShowPasteModal] = useState(false);
+  const [pasteText, setPasteText] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   // Form state
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [price, setPrice] = useState<number | ''>('');
-  const [stock, setStock] = useState<number | ''>(10);
+  const [stock, setStock] = useState<number | ''>(50);
   const [discount, setDiscount] = useState<number | ''>(0);
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Lirios');
+  const [category, setCategory] = useState('Agujas y Jeringas');
   const [imageUrl, setImageUrl] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
 
-  // Excel import status
-  const [importStatus, setImportStatus] = useState<string | null>(null);
+  // Status message
+  const [importStatus, setImportStatus] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  const categories = ['Lirios', 'Rosas', 'Eventos', 'Tulipanes', 'Orquídeas', 'Girasoles', 'General'];
+  const medicalCategories = [
+    'Agujas',
+    'Alcohol',
+    'Algodón',
+    'Antisépticos',
+    'Gasas',
+    'Guantes',
+    'Jeringas',
+    'Material de Hospitalización',
+    'Prendas y Protección',
+    'Equipos Médicos',
+    'Tijeras y Cirugía',
+    'Bisturí y Navajas',
+    'Estetoscopios',
+    'Micropore y Fijación',
+    'Parches',
+    'Punzocat y Catéteres',
+    'Sondas y Drenajes',
+    'Suturas Quirúrgicas',
+    'Soluciones y Sueros',
+    'Vendas y Adhesivos',
+    'Curación y Desinfección',
+    'Apoyo Ortopédico',
+    'Rebotica y Botiquín',
+    'Aceites y Pomadas',
+    'Línea Bebé y Maternidad',
+    'OTC y Medicamentos',
+    'Soluciones Hidratantes',
+    'General',
+  ];
 
   const filteredProducts = products.filter((p) => {
     const matchesSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.code.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter;
+    const matchesCategory =
+      categoryFilter === 'all' ||
+      p.category.toLowerCase().includes(categoryFilter.toLowerCase()) ||
+      categoryFilter.toLowerCase().includes(p.category.toLowerCase());
     return matchesSearch && matchesCategory;
   });
 
   const handleOpenNew = () => {
     setEditingProduct(null);
     setName('');
-    setCode(`FL-${Math.floor(100 + Math.random() * 900)}`);
+    setCode(`MED-${Math.floor(100 + Math.random() * 900)}`);
     setPrice('');
-    setStock(15);
+    setStock(50);
     setDiscount(0);
     setDescription('');
-    setCategory('Lirios');
-    setImageUrl('https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=600&auto=format&fit=crop&q=80');
+    setCategory('Agujas y Jeringas');
+    setImageUrl('https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&auto=format&fit=crop&q=80');
     setShowModal(true);
   };
 
@@ -108,102 +162,205 @@ export const AdminCatalog: React.FC = () => {
         discount: Number(discount) || 0,
         description,
         category,
-        imageUrl: imageUrl || 'https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=600&auto=format&fit=crop&q=80',
+        imageUrl: imageUrl || getPlaceholderImageForCategory(category),
       });
     } else {
       addProduct({
         name,
-        code: code || `FL-${Date.now().toString().slice(-4)}`,
+        code: code || `MED-${Date.now().toString().slice(-4)}`,
         price: Number(price),
-        stock: Number(stock) || 0,
+        stock: Number(stock) || 50,
         discount: Number(discount) || 0,
-        description,
+        description: description || 'Suministro médico y material de curación.',
         category,
-        imageUrl: imageUrl || 'https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=600&auto=format&fit=crop&q=80',
+        imageUrl: imageUrl || getPlaceholderImageForCategory(category),
       });
     }
 
     setShowModal(false);
   };
 
+  // Upload Excel / CSV file from disk
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
-      setImportStatus('Procesando archivo Excel...');
+      setImportStatus({ text: 'Analizando archivo Excel / CSV...' });
       const imported = await parseExcelProducts(file);
       if (imported.length === 0) {
-        setImportStatus('No se encontraron registros válidos en el archivo.');
+        setImportStatus({ text: 'No se detectaron registros válidos en el archivo.', isError: true });
         return;
       }
       importProductsList(imported);
-      setImportStatus(`¡Se importaron con éxito ${imported.length} productos al catálogo!`);
-      setTimeout(() => setImportStatus(null), 4500);
+      setImportStatus({
+        text: `¡Se importaron con éxito ${imported.length} productos de suministros médicos y material de curación!`,
+      });
+      setTimeout(() => setImportStatus(null), 5000);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al leer el archivo';
-      setImportStatus(`Error al importar: ${msg}`);
+      const msg = err instanceof Error ? err.message : 'Error al procesar archivo';
+      setImportStatus({ text: `Error al importar: ${msg}`, isError: true });
     }
   };
 
+  // Parse pasted CSV text
+  const handleProcessPastedText = () => {
+    if (!pasteText.trim()) return;
+    try {
+      const parsed = parseRawMedicalPriceList(pasteText);
+      if (parsed.length === 0) {
+        setImportStatus({ text: 'No se encontraron registros válidos en el texto pegado.', isError: true });
+        return;
+      }
+      importProductsList(parsed);
+      setShowPasteModal(false);
+      setPasteText('');
+      setImportStatus({
+        text: `¡Se procesaron e importaron ${parsed.length} productos desde la lista de precios pegada!`,
+      });
+      setTimeout(() => setImportStatus(null), 5000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
+      setImportStatus({ text: `Error: ${msg}`, isError: true });
+    }
+  };
+
+  // Quick 1-click import of the analyzed price list
+  const handleImportAnalyzedList = () => {
+    const count = importAnalyzedMedicalCatalog();
+    setImportStatus({
+      text: `¡Se importaron ${count} registros oficiales de suministros médicos y material de curación al catálogo!`,
+    });
+    setTimeout(() => setImportStatus(null), 5000);
+  };
+
+  // Upload to Supabase cloud
+  const handleUploadToSupabase = async () => {
+    if (products.length === 0) {
+      alert('Primero importa o agrega productos al catálogo local antes de sincronizar con Supabase.');
+      return;
+    }
+    setIsSyncing(true);
+    const res = await uploadProductsToSupabase();
+    setIsSyncing(false);
+    setImportStatus({ text: res.message, isError: !res.success });
+  };
+
+  // Pull from Supabase cloud
+  const handleFetchFromSupabase = async () => {
+    setIsSyncing(true);
+    const res = await fetchProductsFromSupabase();
+    setIsSyncing(false);
+    setImportStatus({ text: res.message, isError: !res.success });
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-stone-200/80">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-2 border-b border-stone-200/80">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#1B1A18] tracking-tight">
-            Catálogo Oficial de Productos
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#1B1A18] tracking-tight">
+              Catálogo de Suministros Médicos y Material de Curación
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#C9B368]/20 text-[#1B1A18] border border-[#C9B368]/40">
+              {products.length} productos
+            </span>
+          </div>
           <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-            Registra flores, precios, stock e importa listas completas desde Excel
+            Importación directa de listas de precios (Excel/CSV) y sincronización con Supabase ({supabaseConfig.projectId})
           </p>
         </div>
 
+        {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Download Excel Template */}
+          {/* 1-Click Import Analyzed Price List */}
           <button
-            onClick={downloadExcelTemplate}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 text-xs font-semibold transition cursor-pointer"
-            title="Descargar plantilla de Excel de ejemplo"
+            onClick={handleImportAnalyzedList}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-950 text-xs font-bold transition cursor-pointer shadow-2xs"
+            title="Importar lista completa de suministros médicos analizada (300+ productos)"
           >
-            <Download className="w-3.5 h-3.5 text-[#C9B368]" />
-            Plantilla Excel
+            <Sparkles className="w-3.5 h-3.5 text-[#C9B368]" />
+            <span>Importar Lista Analizada (320+)</span>
           </button>
 
-          {/* Import Excel Button */}
-          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-semibold transition cursor-pointer">
+          {/* Import Excel File */}
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-950 text-xs font-semibold transition cursor-pointer">
             <Upload className="w-3.5 h-3.5 text-emerald-700" />
-            Importar Excel / CSV
+            <span>Subir Excel / CSV</span>
             <input
               ref={excelInputRef}
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx,.xls,.csv,.txt"
               onChange={handleExcelUpload}
               className="hidden"
             />
           </label>
 
-          {/* New Product */}
+          {/* Paste CSV button */}
+          <button
+            onClick={() => setShowPasteModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 text-xs font-semibold transition cursor-pointer"
+            title="Pegar texto o contenido CSV de la lista de precios"
+          >
+            <ClipboardPaste className="w-3.5 h-3.5 text-stone-600" />
+            <span>Pegar Texto</span>
+          </button>
+
+          {/* Download Template */}
+          <button
+            onClick={downloadMedicalExcelTemplate}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 text-xs font-semibold transition cursor-pointer"
+            title="Descargar plantilla Excel oficial de suministros médicos"
+          >
+            <Download className="w-3.5 h-3.5 text-[#C9B368]" />
+            <span>Plantilla</span>
+          </button>
+
+          {/* Supabase Upload / Sync */}
+          {products.length > 0 && (
+            <button
+              onClick={handleUploadToSupabase}
+              disabled={isSyncing}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer shadow-xs disabled:opacity-50"
+              title="Guardar catálogo actual en Supabase Cloud"
+            >
+              <CloudUpload className="w-3.5 h-3.5" />
+              <span>{isSyncing ? 'Sincronizando...' : 'Subir a Supabase'}</span>
+            </button>
+          )}
+
+          {/* New Single Product */}
           <button
             onClick={handleOpenNew}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white text-xs sm:text-sm font-bold shadow-md transition cursor-pointer"
           >
             <Plus className="w-4 h-4 text-[#C9B368]" />
-            Nuevo Producto
+            <span>Nuevo</span>
           </button>
         </div>
       </div>
 
-      {/* Import Status Alert */}
+      {/* Import / Sync Status Banner */}
       {importStatus && (
-        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center justify-between animate-in fade-in">
+        <div
+          className={`p-3.5 rounded-2xl border text-xs flex items-center justify-between animate-in fade-in ${
+            importStatus.isError
+              ? 'bg-red-50 border-red-200 text-red-900'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-950 font-medium'
+          }`}
+        >
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{importStatus}</span>
+            {importStatus.isError ? (
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            )}
+            <span>{importStatus.text}</span>
           </div>
           <button
             onClick={() => setImportStatus(null)}
-            className="text-stone-400 hover:text-stone-700"
+            className="text-stone-400 hover:text-stone-700 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -216,7 +373,7 @@ export const AdminCatalog: React.FC = () => {
           <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Buscar por nombre, código SKU o descripción..."
+            placeholder="Buscar aguja, jeringa, gasa, alcohol, solución, SKU..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] focus:outline-none focus:border-[#C9B368]"
@@ -230,8 +387,8 @@ export const AdminCatalog: React.FC = () => {
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="py-2.5 px-3 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] font-medium focus:outline-none focus:border-[#C9B368] w-full sm:w-auto"
           >
-            <option value="all">Todas las Categorías</option>
-            {categories.map((c) => (
+            <option value="all">Todas las Categorías Médicas</option>
+            {medicalCategories.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
@@ -240,18 +397,51 @@ export const AdminCatalog: React.FC = () => {
         </div>
       </div>
 
-      {/* Products Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredProducts.length === 0 ? (
-          <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-stone-200">
-            <Package className="w-12 h-12 text-stone-300 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-stone-700">No se encontraron productos</p>
-            <p className="text-xs text-stone-400 mt-1">
-              Prueba con otro término de búsqueda o agrega un nuevo producto.
+      {/* Products Grid or Empty Initial State */}
+      {products.length === 0 ? (
+        <div className="bg-white rounded-3xl border border-stone-200/90 p-8 sm:p-12 text-center space-y-4 shadow-sm">
+          <div className="w-16 h-16 rounded-2xl bg-[#1B1A18] text-[#C9B368] mx-auto flex items-center justify-center shadow-sm">
+            <Package className="w-8 h-8" />
+          </div>
+          <div className="max-w-md mx-auto space-y-1.5">
+            <h3 className="text-base sm:text-lg font-bold text-[#1B1A18]">
+              Catálogo Inicial Limpio (Sin datos de muestra)
+            </h3>
+            <p className="text-xs text-stone-500 leading-relaxed">
+              Los productos de prueba anteriores han sido removidos. Ahora puedes importar directamente tu lista de precios en Excel o CSV, o cargar los más de 320 productos de suministros médicos analizados con un solo clic.
             </p>
           </div>
-        ) : (
-          filteredProducts.map((prod) => {
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
+            <button
+              onClick={handleImportAnalyzedList}
+              className="py-3 px-5 rounded-xl bg-[#C9B368] hover:bg-[#b59f54] text-[#1B1A18] font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4" />
+              Importar Lista Analizada (320+ Suministros Médicos)
+            </button>
+
+            <label className="py-3 px-5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer">
+              <Upload className="w-4 h-4 text-[#C9B368]" />
+              Subir Archivo Excel / CSV
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.txt"
+                onChange={handleExcelUpload}
+                className="hidden"
+              />
+            </label>
+          </div>
+        </div>
+      ) : filteredProducts.length === 0 ? (
+        <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-stone-200">
+          <Package className="w-12 h-12 text-stone-300 mx-auto mb-2" />
+          <p className="text-sm font-semibold text-stone-700">No se encontraron productos con el filtro aplicado</p>
+          <p className="text-xs text-stone-400 mt-1">Prueba con otra palabra clave o selecciona "Todas las Categorías".</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredProducts.map((prod) => {
             const hasDiscount = prod.discount > 0;
             const finalPrice = prod.price * (1 - (prod.discount || 0) / 100);
 
@@ -261,7 +451,6 @@ export const AdminCatalog: React.FC = () => {
                 className="bg-white rounded-2xl border border-stone-200/90 overflow-hidden shadow-2xs hover:shadow-md transition flex flex-col justify-between group"
               >
                 <div>
-                  {/* Image container */}
                   <div className="relative aspect-4/3 overflow-hidden bg-stone-100">
                     <img
                       src={prod.imageUrl}
@@ -278,21 +467,20 @@ export const AdminCatalog: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* Body */}
-                  <div className="p-4 space-y-2">
+                  <div className="p-4 space-y-1.5">
                     <div className="flex items-center justify-between text-[11px] text-stone-500">
-                      <span className="font-semibold text-stone-600">{prod.category || 'General'}</span>
-                      <span
-                        className={`font-semibold ${
-                          prod.stock <= 5 ? 'text-red-600 font-bold' : 'text-stone-500'
-                        }`}
-                      >
+                      <span className="font-semibold text-stone-600 truncate max-w-[130px]">
+                        {prod.category}
+                      </span>
+                      <span className="text-stone-500 font-medium">
                         Stock: {prod.stock} u.
                       </span>
                     </div>
 
-                    <h3 className="text-sm font-bold text-[#1B1A18] line-clamp-1">{prod.name}</h3>
-                    <p className="text-xs text-stone-500 line-clamp-2 leading-relaxed">
+                    <h3 className="text-xs sm:text-sm font-bold text-[#1B1A18] line-clamp-2 leading-tight">
+                      {prod.name}
+                    </h3>
+                    <p className="text-[11px] text-stone-500 line-clamp-2 leading-relaxed">
                       {prod.description}
                     </p>
 
@@ -309,7 +497,6 @@ export const AdminCatalog: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Card Actions */}
                 <div className="p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center justify-end gap-2">
                   <button
                     onClick={() => handleOpenEdit(prod)}
@@ -332,9 +519,71 @@ export const AdminCatalog: React.FC = () => {
                 </div>
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
+
+      {/* Modal: Paste CSV / Raw Text */}
+      {showPasteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-stone-200 overflow-hidden text-[#1B1A18] max-h-[90vh] flex flex-col">
+            <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-[#FAF8F5]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#1B1A18] text-[#C9B368] flex items-center justify-center">
+                  <ClipboardPaste className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-[#1B1A18]">Pegar Lista de Precios en Texto o CSV</h3>
+                  <p className="text-xs text-stone-500">Detecta automáticamente códigos, nombres, categorías y precios</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPasteModal(false)}
+                className="p-1 rounded-full hover:bg-stone-200 text-stone-500 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-6 space-y-4 text-xs overflow-y-auto">
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">
+                  Pega aquí el contenido de tu lista de precios:
+                </label>
+                <textarea
+                  rows={10}
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder="008.3,AGUJA NIPRO HIPODERMICA 16 G * 1 1/2 MORADA,,,,,, $1.98&#10;011,ALCOHOL LOURDES DESNAT. 70° 125 ML,,,,,, $7.96"
+                  className="w-full p-3 rounded-xl border border-stone-300 font-mono text-[11px] focus:outline-none focus:border-[#C9B368] resize-none bg-stone-50"
+                />
+              </div>
+
+              <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 text-[11px] text-stone-600">
+                El analizador detecta filas con código, descripción y precios con signo ($), así como los encabezados de categorías (AGUJAS, ALCOHOL, GASAS, etc.).
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowPasteModal(false)}
+                  className="py-2.5 px-4 rounded-xl border border-stone-200 text-stone-600 font-semibold hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleProcessPastedText}
+                  disabled={!pasteText.trim()}
+                  className="py-2.5 px-5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-bold transition shadow-sm cursor-pointer disabled:opacity-50"
+                >
+                  Analizar e Importar Productos
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: New / Edit Product */}
       {showModal && (
@@ -346,7 +595,7 @@ export const AdminCatalog: React.FC = () => {
                   <Package className="w-4 h-4" />
                 </div>
                 <h3 className="font-bold text-base text-[#1B1A18]">
-                  {editingProduct ? 'Editar Producto' : 'Registrar Nuevo Producto'}
+                  {editingProduct ? 'Editar Producto' : 'Registrar Nuevo Suministro Médico'}
                 </h3>
               </div>
               <button
@@ -360,11 +609,11 @@ export const AdminCatalog: React.FC = () => {
             <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-stone-700 mb-1">Nombre del Producto *</label>
+                  <label className="block font-bold text-stone-700 mb-1">Nombre / Descripción *</label>
                   <input
                     type="text"
                     required
-                    placeholder="Ej. Bouquet Imperial de Lirios"
+                    placeholder="Ej. AGUJA NIPRO HIPODERMICA 21 G"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368]"
@@ -376,7 +625,7 @@ export const AdminCatalog: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder="FL-001"
+                    placeholder="007 o MED-001"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368] font-mono"
@@ -385,11 +634,10 @@ export const AdminCatalog: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-bold text-stone-700 mb-1">Características / Descripción *</label>
+                <label className="block font-bold text-stone-700 mb-1">Características / Presentación</label>
                 <textarea
-                  required
                   rows={2}
-                  placeholder="Detalla las flores que contiene, tamaño, base o envoltura..."
+                  placeholder="Detalles de empaque, calibres, medidas, esterilización..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368]"
@@ -398,12 +646,12 @@ export const AdminCatalog: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-stone-700 mb-1">Precio ($ MXN) *</label>
+                  <label className="block font-bold text-stone-700 mb-1">Precio Unitario ($ MXN) *</label>
                   <input
                     type="number"
                     step="0.01"
                     required
-                    placeholder="450.00"
+                    placeholder="12.50"
                     value={price}
                     onChange={(e) => setPrice(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368]"
@@ -416,7 +664,7 @@ export const AdminCatalog: React.FC = () => {
                     type="number"
                     required
                     min="0"
-                    placeholder="10"
+                    placeholder="50"
                     value={stock}
                     onChange={(e) => setStock(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368]"
@@ -445,7 +693,7 @@ export const AdminCatalog: React.FC = () => {
                     onChange={(e) => setCategory(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368] bg-white font-medium"
                   >
-                    {categories.map((c) => (
+                    {medicalCategories.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
@@ -454,7 +702,7 @@ export const AdminCatalog: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-stone-700 mb-1">Subir Imagen del Producto</label>
+                  <label className="block font-bold text-stone-700 mb-1">Subir Imagen</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="file"
@@ -484,11 +732,6 @@ export const AdminCatalog: React.FC = () => {
                   onChange={(e) => setImageUrl(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368]"
                 />
-                {imageUrl && (
-                  <div className="mt-2 w-20 h-20 rounded-xl overflow-hidden border border-stone-200">
-                    <img src={imageUrl} alt="Vista previa" className="w-full h-full object-cover" />
-                  </div>
-                )}
               </div>
 
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-stone-100">

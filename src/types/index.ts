@@ -107,4 +107,6 @@ export interface SupabaseConfig {
   url: string;
   anonKey: string;
   connected: boolean;
+  projectId?: string;
+  projectName?: string;
 }

@@ -10,6 +10,8 @@ import {
   OrderStatus,
   SupabaseConfig,
 } from '../types';
+import { ANALYZED_MEDICAL_PRICE_LIST_CSV } from '../data/analyzedPriceList';
+import { parseRawMedicalPriceList } from '../utils/excelImport';
 
 interface CartItem {
   product: Product;
@@ -31,6 +33,7 @@ interface AppContextType {
   updateProduct: (id: string, product: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
   importProductsList: (imported: Product[]) => void;
+  importAnalyzedMedicalCatalog: () => number;
 
   // Clients
   clients: Client[];
@@ -83,10 +86,13 @@ interface AppContextType {
   clearAllSampleData: () => void;
   restoreSampleData: () => void;
 
-  // Supabase Bridge Config
+  // Supabase Bridge Config & Cloud Operations
   supabaseConfig: SupabaseConfig;
   updateSupabaseConfig: (config: Partial<SupabaseConfig>) => void;
   testSupabaseConnection: () => Promise<{ success: boolean; message: string }>;
+  uploadProductsToSupabase: (productsToUpload?: Product[]) => Promise<{ success: boolean; count: number; message: string }>;
+  fetchProductsFromSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
+  clearSupabaseCloudRecords: () => Promise<{ success: boolean; message: string }>;
 
   // Active view within current role
   activeTab: string;
@@ -96,134 +102,71 @@ interface AppContextType {
 const STORAGE_KEYS = {
   ACTIVE_ROLE: 'flor_active_role',
   ACTIVE_TAB: 'flor_active_tab',
-  PRODUCTS: 'flor_products',
-  CLIENTS: 'flor_clients',
-  ORDERS: 'flor_orders',
-  EMPLOYEES: 'flor_employees',
-  NOTIFICATIONS: 'flor_notifications',
+  PRODUCTS: 'flor_products_v2', // v2 to ensure old flower products are cleared
+  CLIENTS: 'flor_clients_v2',
+  ORDERS: 'flor_orders_v2',
+  EMPLOYEES: 'flor_employees_v2',
+  NOTIFICATIONS: 'flor_notifications_v2',
   SAMPLE_CLEARED: 'flor_sample_data_cleared',
   ADMIN_PROFILE: 'flor_admin_profile',
   VENDEDOR_PROFILE: 'flor_vendedor_profile',
   CLIENTE_PROFILE: 'flor_cliente_profile',
-  SUPABASE_CONFIG: 'flor_supabase_config',
+  SUPABASE_CONFIG: 'flor_supabase_config_v2',
 };
 
-// INITIAL SAMPLE DATA
-const INITIAL_PRODUCTS: Product[] = [
-  {
-    id: 'prod_1',
-    code: 'LIZ-001',
-    name: 'Bouquet Imperial de Lirios Blancos',
-    price: 480.0,
-    stock: 35,
-    discount: 10,
-    description: 'Arreglo estelar con lirios orientales blancos premium, follaje eucalipto y cinta dorada.',
-    category: 'Lirios',
-    imageUrl: 'https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=700&auto=format&fit=crop&q=80',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'prod_2',
-    code: 'ROS-002',
-    name: 'Caja Regalo 36 Rosas Selectas',
-    price: 750.0,
-    stock: 22,
-    discount: 5,
-    description: 'Caja redonda de terciopelo negro con 36 rosas rojas importadas de tallo largo.',
-    category: 'Rosas',
-    imageUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=700&auto=format&fit=crop&q=80',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'prod_3',
-    code: 'ARR-003',
-    name: 'Centro de Mesa Catedral Floral',
-    price: 920.0,
-    stock: 14,
-    discount: 15,
-    description: 'Diseño para eventos de gala con orquídeas, hortensias y lirios en base de cristal ahumado.',
-    category: 'Eventos',
-    imageUrl: 'https://images.unsplash.com/photo-1561181286-d3fee7d55364?w=700&auto=format&fit=crop&q=80',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'prod_4',
-    code: 'TUL-004',
-    name: 'Docena de Tulipanes Holandeses',
-    price: 390.0,
-    stock: 40,
-    discount: 0,
-    description: 'Tulipanes holandeses en tonos pasteles envoltura kraft ecológica de alta gama.',
-    category: 'Tulipanes',
-    imageUrl: 'https://images.unsplash.com/photo-1520763185298-1b434c919102?w=700&auto=format&fit=crop&q=80',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'prod_5',
-    code: 'ORQ-005',
-    name: 'Orquídea Phalaenopsis Doble Vara',
-    price: 650.0,
-    stock: 18,
-    discount: 8,
-    description: 'Planta de orquídea viva en maceta artesanal dorada con sustrato nutritivo y fertilizante.',
-    category: 'Orquídeas',
-    imageUrl: 'https://images.unsplash.com/photo-1610996882200-9831969a8b13?w=700&auto=format&fit=crop&q=80',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'prod_6',
-    code: 'GIR-006',
-    name: 'Jarrón Rústico Girasoles de Sol',
-    price: 360.0,
-    stock: 25,
-    discount: 0,
-    description: '10 girasoles grandes con flores silvestres moradas y jarra de cerámica vidriada.',
-    category: 'Girasoles',
-    imageUrl: 'https://images.unsplash.com/photo-1597848212624-a19eb35e2651?w=700&auto=format&fit=crop&q=80',
-    createdAt: new Date().toISOString(),
-  },
-];
+// USER CONFIGURATION FOR SUPABASE
+const DEFAULT_SUPABASE_CONFIG: SupabaseConfig = {
+  url: 'https://ylzgfsvcibqsztarglja.supabase.co/rest/v1/',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlsemdmc3ZjaWJxc3p0YXJnbGphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4MDU2NDksImV4cCI6MjEwNjM4MTY0OX0.020w8ie-1aNgSgGrdjza_Ty-UxWJuXU4NWmaaGx1R_o',
+  connected: true,
+  projectId: 'ylzgfsvcibqsztarglja',
+  projectName: "flordeliz@appdesignsoftware.com's Project",
+};
 
+// INITIAL PRODUCTS: ZERO SAMPLE PRODUCTS AS REQUESTED BY USER ("Quita los producto que tienes de muestra")
+const INITIAL_PRODUCTS: Product[] = [];
+
+// Clean initial clients for medical supplies and material de curacion
 const INITIAL_CLIENTS: Client[] = [
   {
     id: 'cli_1',
-    name: 'Mariana Garza Valdez',
-    businessName: 'Boutique Eventos Gala',
-    rfc: 'GAVM880415XYZ',
-    address: 'Av. Paseo de las Palmas 450, Col. Lomas, CDMX',
+    name: 'Dra. Patricia Méndez Galindo',
+    businessName: 'Clínica Quirúrgica San Rafael',
+    rfc: 'MEGP850612ABC',
+    address: 'Av. Revolución 1420, Col. San Ángel, CDMX',
     phone: '5512345678',
     whatsapp: '5512345678',
-    email: 'contacto@eventosgala.com',
+    email: 'compras@clinicasanrafael.mx',
     active: true,
-    notes: 'Cliente corporativo frecuente. Prefiere entregas matutinas antes de las 11:00 AM.',
+    notes: 'Suministro quincenal de suturas, gasas esterilizadas y jeringas Nipro.',
     createdAt: new Date(Date.now() - 86400000 * 15).toISOString(),
     createdByVendedorId: 'emp_1',
   },
   {
     id: 'cli_2',
-    name: 'Carlos Mendoza Ríos',
-    businessName: 'Florería Santa Fe',
-    rfc: 'MERC791022AAA',
-    address: 'Calle Vasco de Quiroga 120, Cuajimalpa, CDMX',
+    name: 'Lic. Fernando Rivas Cordero',
+    businessName: 'Farmacias y Botica Central',
+    rfc: 'FBC020815XYZ',
+    address: 'Calzada de Tlalpan 890, Benito Juárez, CDMX',
     phone: '5523456789',
     whatsapp: '5523456789',
-    email: 'carlos@floreriasantafe.mx',
+    email: 'adquisiciones@boticacentral.mx',
     active: true,
-    notes: 'Pedidos por volumen quincenales para reventa.',
+    notes: 'Pedidos por volumen de alcohol, algodón, antisépticos y material de curación.',
     createdAt: new Date(Date.now() - 86400000 * 25).toISOString(),
     createdByVendedorId: 'emp_1',
   },
   {
     id: 'cli_3',
-    name: 'Valeria Sotomayor',
-    businessName: 'Hotel & Spa Bella Vista',
-    rfc: 'SOVA920311BBB',
-    address: 'Camino Real 88, Polanco, CDMX',
+    name: 'Dr. Roberto Salgado Vega',
+    businessName: 'Centro Médico Quirúrgico Polanco',
+    rfc: 'SAVR781109KLM',
+    address: 'Campos Elíseos 204, Polanco, CDMX',
     phone: '5534567890',
     whatsapp: '5534567890',
-    email: 'compras@hotelbellavista.mx',
+    email: 'contacto@cirugiapolanco.com',
     active: true,
-    notes: 'Requiere factura siempre en el mismo día del pedido.',
+    notes: 'Requiere facturación al momento y equipo de venoclisis normogotero.',
     createdAt: new Date(Date.now() - 86400000 * 40).toISOString(),
     createdByVendedorId: 'emp_2',
   },
@@ -233,192 +176,44 @@ const INITIAL_EMPLOYEES: Employee[] = [
   {
     id: 'emp_1',
     name: 'Rodrigo Morales Peña',
-    position: 'Ejecutivo Comercial Senior',
+    position: 'Asesor Comercial Médico Senior',
     email: 'rodrigo.ventas@flordeliz.com',
     phone: '5545678901',
     whatsapp: '5545678901',
-    accessCode: 'VEND-7890',
+    accessCode: 'MED-7890',
     role: 'vendedor',
     active: true,
-    salesCount: 14,
-    totalSold: 28450.0,
+    salesCount: 8,
+    totalSold: 14250.0,
     createdAt: new Date(Date.now() - 86400000 * 60).toISOString(),
   },
   {
     id: 'emp_2',
     name: 'Sofía Navarro Cruz',
-    position: 'Asesora de Ventas Mayoreo',
+    position: 'Especialista en Material de Curación',
     email: 'sofia.navarro@flordeliz.com',
     phone: '5556789012',
     whatsapp: '5556789012',
-    accessCode: 'VEND-4560',
+    accessCode: 'MED-4560',
     role: 'vendedor',
     active: true,
-    salesCount: 9,
-    totalSold: 18900.0,
+    salesCount: 5,
+    totalSold: 9800.0,
     createdAt: new Date(Date.now() - 86400000 * 45).toISOString(),
-  },
-  {
-    id: 'emp_3',
-    name: 'Javier Castillo Silva',
-    position: 'Coordinador de Logística y Ventas',
-    email: 'javier.castillo@flordeliz.com',
-    phone: '5567890123',
-    whatsapp: '5567890123',
-    accessCode: 'VEND-1234',
-    role: 'vendedor',
-    active: true,
-    salesCount: 6,
-    totalSold: 12350.0,
-    createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
   },
 ];
 
-const INITIAL_ORDERS: Order[] = [
-  {
-    id: 'ord_1',
-    orderNumber: 'FDL-1001',
-    clientId: 'cli_1',
-    clientName: 'Mariana Garza Valdez',
-    clientBusiness: 'Boutique Eventos Gala',
-    clientPhone: '5512345678',
-    clientWhatsapp: '5512345678',
-    clientAddress: 'Av. Paseo de las Palmas 450, Col. Lomas, CDMX',
-    items: [
-      {
-        productId: 'prod_1',
-        productName: 'Bouquet Imperial de Lirios Blancos',
-        productCode: 'LIZ-001',
-        price: 480.0,
-        quantity: 4,
-        discount: 10,
-        subtotal: 1728.0,
-      },
-      {
-        productId: 'prod_3',
-        productName: 'Centro de Mesa Catedral Floral',
-        productCode: 'ARR-003',
-        price: 920.0,
-        quantity: 2,
-        discount: 15,
-        subtotal: 1564.0,
-      },
-    ],
-    subtotal: 3760.0,
-    discountTotal: 468.0,
-    total: 3292.0,
-    status: 'Entregado',
-    createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-    vendedorId: 'emp_1',
-    vendedorName: 'Rodrigo Morales Peña',
-    notes: 'Entregado a recepción del evento en tiempo y forma.',
-    source: 'vendedor',
-  },
-  {
-    id: 'ord_2',
-    orderNumber: 'FDL-1002',
-    clientId: 'cli_2',
-    clientName: 'Carlos Mendoza Ríos',
-    clientBusiness: 'Florería Santa Fe',
-    clientPhone: '5523456789',
-    clientWhatsapp: '5523456789',
-    clientAddress: 'Calle Vasco de Quiroga 120, Cuajimalpa, CDMX',
-    items: [
-      {
-        productId: 'prod_2',
-        productName: 'Caja Regalo 36 Rosas Selectas',
-        productCode: 'ROS-002',
-        price: 750.0,
-        quantity: 5,
-        discount: 5,
-        subtotal: 3562.5,
-      },
-    ],
-    subtotal: 3750.0,
-    discountTotal: 187.5,
-    total: 3562.5,
-    status: 'En ruta',
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-    vendedorId: 'emp_1',
-    vendedorName: 'Rodrigo Morales Peña',
-    notes: 'Chofer en ruta con camioneta climatizada.',
-    source: 'vendedor',
-  },
-  {
-    id: 'ord_3',
-    orderNumber: 'FDL-1003',
-    clientId: 'cli_3',
-    clientName: 'Valeria Sotomayor',
-    clientBusiness: 'Hotel & Spa Bella Vista',
-    clientPhone: '5534567890',
-    clientWhatsapp: '5534567890',
-    clientAddress: 'Camino Real 88, Polanco, CDMX',
-    items: [
-      {
-        productId: 'prod_5',
-        productName: 'Orquídea Phalaenopsis Doble Vara',
-        productCode: 'ORQ-005',
-        price: 650.0,
-        quantity: 3,
-        discount: 8,
-        subtotal: 1794.0,
-      },
-      {
-        productId: 'prod_4',
-        productName: 'Docena de Tulipanes Holandeses',
-        productCode: 'TUL-004',
-        price: 390.0,
-        quantity: 2,
-        discount: 0,
-        subtotal: 780.0,
-      },
-    ],
-    subtotal: 2730.0,
-    discountTotal: 156.0,
-    total: 2574.0,
-    status: 'En preparación',
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    vendedorId: 'emp_2',
-    vendedorName: 'Sofía Navarro Cruz',
-    notes: 'Flores frescas recién hidratadas.',
-    source: 'vendedor',
-  },
-];
+const INITIAL_ORDERS: Order[] = [];
 
 const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   {
-    id: 'notif_1',
-    title: 'Nueva Venta Registrada',
-    message: 'Rodrigo Morales registró el pedido #FDL-1002 para Florería Santa Fe por $3,562.50 MXN.',
-    type: 'order_created',
+    id: 'notif_init_1',
+    title: 'Sistema Conectado a Supabase',
+    message: 'Proyecto ylzgfsvcibqsztarglja configurado y listo para sincronizar catálogo de suministros médicos.',
+    type: 'system',
     targetRole: 'admin',
-    orderId: 'ord_2',
     read: false,
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-  },
-  {
-    id: 'notif_2',
-    title: 'Pedido en Ruta',
-    message: 'Tu pedido #FDL-1002 ya salió de bodega y va en ruta a tu dirección.',
-    type: 'status_updated',
-    targetRole: 'cliente',
-    targetUserId: 'cli_2',
-    orderId: 'ord_2',
-    read: false,
-    createdAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-  },
-  {
-    id: 'notif_3',
-    title: 'Nuevo Pedido en Preparación',
-    message: 'Pedido #FDL-1003 está en taller para montaje final.',
-    type: 'order_created',
-    targetRole: 'admin',
-    orderId: 'ord_3',
-    read: true,
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+    createdAt: new Date().toISOString(),
   },
 ];
 
@@ -426,8 +221,8 @@ const DEFAULT_ADMIN_PROFILE: UserProfile = {
   id: 'user_admin_1',
   role: 'admin',
   name: 'Dirección Comercial Flor de Líz',
-  businessName: 'Comercializadora Flor de Líz S.A. de C.V.',
-  email: 'administracion@flordeliz.com',
+  businessName: 'Comercializadora Flor de Líz - Suministros Médicos y Material de Curación',
+  email: 'flordeliz@appdesignsoftware.com',
   phone: '5512345678',
   whatsapp: '5512345678',
   address: 'Insurgentes Sur 1450, Ciudad de México',
@@ -438,41 +233,38 @@ const DEFAULT_VENDEDOR_PROFILE: UserProfile = {
   id: 'user_vendedor_1',
   role: 'vendedor',
   name: 'Rodrigo Morales Peña',
-  businessName: 'Flor de Líz - División Ventas',
+  businessName: 'Flor de Líz - División Suministros Médicos',
   email: 'rodrigo.ventas@flordeliz.com',
   phone: '5545678901',
   whatsapp: '5545678901',
-  address: 'Sucursal Centro, Ciudad de México',
+  address: 'Sucursal Central, Ciudad de México',
   photoUrl: '',
 };
 
 const DEFAULT_CLIENTE_PROFILE: UserProfile = {
   id: 'user_cliente_1',
   role: 'cliente',
-  name: 'Mariana Garza Valdez',
-  businessName: 'Boutique Eventos Gala',
-  email: 'contacto@eventosgala.com',
+  name: 'Dra. Patricia Méndez Galindo',
+  businessName: 'Clínica Quirúrgica San Rafael',
+  email: 'compras@clinicasanrafael.mx',
   phone: '5512345678',
   whatsapp: '5512345678',
-  address: 'Av. Paseo de las Palmas 450, Col. Lomas, CDMX',
+  address: 'Av. Revolución 1420, Col. San Ángel, CDMX',
   photoUrl: '',
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Check if sample data was previously cleared
   const [isSampleDataCleared, setIsSampleDataCleared] = useState<boolean>(() => {
     return localStorage.getItem(STORAGE_KEYS.SAMPLE_CLEARED) === 'true';
   });
 
-  // Active Role (null = Home Role Selector)
   const [activeRole, setActiveRoleState] = useState<UserRole | null>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_ROLE);
     return (saved as UserRole) || null;
   });
 
-  // Active Tab
   const [activeTab, setActiveTabState] = useState<string>(() => {
     return localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB) || 'metricas';
   });
@@ -481,9 +273,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveRoleState(role);
     if (role) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, role);
-      // Set appropriate initial tab
-      if (role === 'admin') setActiveTabState('metricas');
-      else if (role === 'vendedor') setActiveTabState('metricas');
+      if (role === 'admin') setActiveTabState('catalogo');
+      else if (role === 'vendedor') setActiveTabState('catalogo');
       else if (role === 'cliente') setActiveTabState('catalogo');
     } else {
       localStorage.removeItem(STORAGE_KEYS.ACTIVE_ROLE);
@@ -533,11 +324,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Products
+  // Products: Starts completely clean (no sample products)
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-    if (saved) return JSON.parse(saved);
-    if (localStorage.getItem(STORAGE_KEYS.SAMPLE_CLEARED) === 'true') return [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // If it contained flowers, purge it
+        if (Array.isArray(parsed) && parsed.some((p: Product) => p.name?.toLowerCase().includes('lirio') || p.name?.toLowerCase().includes('bouquet') || p.name?.toLowerCase().includes('rosas'))) {
+          return [];
+        }
+        return parsed;
+      } catch {
+        return [];
+      }
+    }
     return INITIAL_PRODUCTS;
   });
 
@@ -553,7 +354,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [orders, setOrders] = useState<Order[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ORDERS);
     if (saved) return JSON.parse(saved);
-    if (localStorage.getItem(STORAGE_KEYS.SAMPLE_CLEARED) === 'true') return [];
     return INITIAL_ORDERS;
   });
 
@@ -569,17 +369,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [notifications, setNotifications] = useState<NotificationItem[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
     if (saved) return JSON.parse(saved);
-    if (localStorage.getItem(STORAGE_KEYS.SAMPLE_CLEARED) === 'true') return [];
     return INITIAL_NOTIFICATIONS;
   });
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  // Supabase Config
+  // Supabase Config initialized with user's project
   const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.SUPABASE_CONFIG);
-    return saved ? JSON.parse(saved) : { url: '', anonKey: '', connected: false };
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.projectId === 'ylzgfsvcibqsztarglja') return parsed;
+      } catch {
+        // use default
+      }
+    }
+    return DEFAULT_SUPABASE_CONFIG;
   });
 
   // Save changes to localStorage
@@ -611,7 +418,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addProduct = (prod: Omit<Product, 'id' | 'createdAt'>) => {
     const newProd: Product = {
       ...prod,
-      id: `prod_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      id: `prod_med_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
     };
     setProducts((prev) => [newProd, ...prev]);
@@ -627,6 +434,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const importProductsList = (imported: Product[]) => {
     setProducts((prev) => [...imported, ...prev]);
+  };
+
+  // Import the analyzed 300+ medical supplies price list with one click
+  const importAnalyzedMedicalCatalog = (): number => {
+    const parsed = parseRawMedicalPriceList(ANALYZED_MEDICAL_PRICE_LIST_CSV);
+    if (parsed.length > 0) {
+      setProducts(parsed);
+      addNotification({
+        title: 'Catálogo de Suministros Médicos Importado',
+        message: `Se importaron ${parsed.length} productos de suministros médicos y material de curación con éxito.`,
+        type: 'system',
+        targetRole: 'admin',
+      });
+      return parsed.length;
+    }
+    return 0;
   };
 
   // Client Operations
@@ -688,7 +511,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const discountTotal = subtotalRaw - total;
 
     const countNext = orders.length + 1001;
-    const orderNumber = `FDL-${countNext}`;
+    const orderNumber = `MED-${countNext}`;
 
     const newOrder: Order = {
       id: `ord_${Date.now()}`,
@@ -714,7 +537,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setOrders((prev) => [newOrder, ...prev]);
 
-    // Deduct stock from products
+    // Deduct stock
     setProducts((prev) =>
       prev.map((p) => {
         const itemInOrder = orderData.items.find((i) => i.product.id === p.id);
@@ -725,7 +548,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    // Update Employee sales if from a vendedor
+    // Update Employee
     if (orderData.vendedorId) {
       setEmployees((prev) =>
         prev.map((emp) =>
@@ -740,20 +563,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     }
 
-    // Create Notification for Admin
+    // Notify Admin
     const creatorLabel = orderData.source === 'cliente_whatsapp' ? 'el cliente' : orderData.vendedorName || 'un vendedor';
     addNotification({
-      title: '¡Nuevo Pedido Recibido!',
-      message: `Nuevo pedido #${orderNumber} registrado por ${creatorLabel} para "${orderData.clientName}". Total: $${total.toFixed(2)} MXN. Requiere seguimiento.`,
+      title: '¡Nuevo Pedido de Material Médico!',
+      message: `Pedido #${orderNumber} registrado por ${creatorLabel} para "${orderData.clientName}". Total: $${total.toFixed(2)} MXN. Dar seguimiento a empaque y surtido.`,
       type: 'order_created',
       targetRole: 'admin',
       orderId: newOrder.id,
     });
 
-    // Create Notification for Cliente
+    // Notify Client
     addNotification({
-      title: 'Tu pedido está En Proceso',
-      message: `Hemos recibido tu pedido #${orderNumber} de Flor de Líz por $${total.toFixed(2)} MXN y se encuentra en proceso.`,
+      title: 'Tu pedido médico está En Proceso',
+      message: `Hemos recibido tu solicitud #${orderNumber} por $${total.toFixed(2)} MXN y se encuentra en almacén para preparación de lote.`,
       type: 'status_updated',
       targetRole: 'cliente',
       targetUserId: orderData.clientId,
@@ -768,10 +591,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((o) => {
         if (o.id === orderId) {
           const updated = { ...o, status, updatedAt: new Date().toISOString() };
-          // Notify client
           addNotification({
-            title: `Estatus de Pedido #${o.orderNumber}: ${status}`,
-            message: `Tu pedido #${o.orderNumber} ha cambiado a estatus: "${status}".`,
+            title: `Estatus de Envío #${o.orderNumber}: ${status}`,
+            message: `Tu pedido #${o.orderNumber} ha pasado a estatus "${status}".`,
             type: 'status_updated',
             targetRole: 'cliente',
             targetUserId: o.clientId,
@@ -873,36 +695,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Clear Sample Data Permanently
   const clearAllSampleData = () => {
-    // Empty all sample records
     setProducts([]);
-    setClients([]);
     setOrders([]);
-    setEmployees([]);
-    setNotifications([]);
     setCart([]);
 
-    // Set flag in localStorage so browser will NEVER reload sample data automatically
     localStorage.setItem(STORAGE_KEYS.SAMPLE_CLEARED, 'true');
     localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
-    localStorage.removeItem(STORAGE_KEYS.CLIENTS);
     localStorage.removeItem(STORAGE_KEYS.ORDERS);
-    localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
-    localStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS);
     setIsSampleDataCleared(true);
   };
 
   // Restore Sample Data
   const restoreSampleData = () => {
-    setProducts(INITIAL_PRODUCTS);
+    setProducts([]);
     setClients(INITIAL_CLIENTS);
-    setOrders(INITIAL_ORDERS);
     setEmployees(INITIAL_EMPLOYEES);
-    setNotifications(INITIAL_NOTIFICATIONS);
     localStorage.removeItem(STORAGE_KEYS.SAMPLE_CLEARED);
     setIsSampleDataCleared(false);
   };
 
-  // Supabase bridge helper
+  // Supabase Config Updates
   const updateSupabaseConfig = (config: Partial<SupabaseConfig>) => {
     setSupabaseConfig((prev) => {
       const next = { ...prev, ...config };
@@ -912,12 +724,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const testSupabaseConnection = async (): Promise<{ success: boolean; message: string }> => {
     if (!supabaseConfig.url || !supabaseConfig.anonKey) {
-      return { success: false, message: 'Ingresa la URL y el anon public key de tu proyecto de Supabase.' };
+      return { success: false, message: 'Ingresa la URL y el anon public key de Supabase.' };
     }
     try {
-      // Test REST ping to Supabase endpoint
       const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
-      const response = await fetch(`${cleanUrl}/rest/v1/`, {
+      const response = await fetch(`${cleanUrl}/`, {
         headers: {
           apikey: supabaseConfig.anonKey,
           Authorization: `Bearer ${supabaseConfig.anonKey}`,
@@ -925,12 +736,117 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       if (response.ok || response.status === 200 || response.status === 404) {
         setSupabaseConfig((prev) => ({ ...prev, connected: true }));
-        return { success: true, message: '¡Conexión establecida con Supabase exitosamente!' };
+        return { success: true, message: `¡Conexión verificada con éxito con el proyecto Supabase (${supabaseConfig.projectId || 'ylzgfsvcibqsztarglja'})!` };
       }
       return { success: false, message: `Respuesta del servidor Supabase: Código ${response.status}` };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error desconocido';
       return { success: false, message: `Error al conectar con Supabase: ${msg}` };
+    }
+  };
+
+  // Upload products to Supabase REST endpoint
+  const uploadProductsToSupabase = async (productsToUpload?: Product[]): Promise<{ success: boolean; count: number; message: string }> => {
+    const list = productsToUpload || products;
+    if (list.length === 0) {
+      return { success: false, count: 0, message: 'No hay productos en el catálogo local para subir.' };
+    }
+
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const payload = list.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        price: p.price,
+        stock: p.stock,
+        discount: p.discount,
+        description: p.description,
+        category: p.category,
+        image_url: p.imageUrl,
+        created_at: p.createdAt,
+      }));
+
+      const res = await fetch(`${cleanUrl}/flor_products`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok || res.status === 201) {
+        return { success: true, count: list.length, message: `¡${list.length} productos subidos exitosamente a Supabase!` };
+      } else {
+        const errorText = await res.text();
+        return { success: false, count: 0, message: `Supabase error (${res.status}): ${errorText}. Asegúrate de haber ejecutado el script SQL en Supabase para crear la tabla flor_products.` };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error de red';
+      return { success: false, count: 0, message: `Error al subir productos: ${msg}` };
+    }
+  };
+
+  // Fetch products from Supabase
+  const fetchProductsFromSupabase = async (): Promise<{ success: boolean; count: number; message: string }> => {
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const res = await fetch(`${cleanUrl}/flor_products?select=*`, {
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped: Product[] = data.map((item: Record<string, unknown>) => ({
+            id: String(item.id),
+            code: String(item.code || ''),
+            name: String(item.name || ''),
+            price: Number(item.price || 0),
+            stock: Number(item.stock || 0),
+            discount: Number(item.discount || 0),
+            description: String(item.description || ''),
+            category: String(item.category || 'General'),
+            imageUrl: String(item.image_url || ''),
+            createdAt: String(item.created_at || new Date().toISOString()),
+          }));
+          setProducts(mapped);
+          return { success: true, count: mapped.length, message: `Se cargaron ${mapped.length} productos desde Supabase.` };
+        }
+        return { success: true, count: 0, message: 'La tabla flor_products en Supabase está vacía.' };
+      } else {
+        const err = await res.text();
+        return { success: false, count: 0, message: `Error al consultar Supabase (${res.status}): ${err}` };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error de red';
+      return { success: false, count: 0, message: `Error: ${msg}` };
+    }
+  };
+
+  // Clear Supabase cloud records
+  const clearSupabaseCloudRecords = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      await fetch(`${cleanUrl}/flor_products?id=neq.none`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      clearAllSampleData();
+      return { success: true, message: 'Registros de productos en Supabase y localmente eliminados.' };
+    } catch (err: unknown) {
+      clearAllSampleData();
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, message: `Tablas locales vaciadas. Supabase: ${msg}` };
     }
   };
 
@@ -950,6 +866,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateProduct,
         deleteProduct,
         importProductsList,
+        importAnalyzedMedicalCatalog,
         clients,
         addClient,
         updateClient,
@@ -980,6 +897,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         supabaseConfig,
         updateSupabaseConfig,
         testSupabaseConnection,
+        uploadProductsToSupabase,
+        fetchProductsFromSupabase,
+        clearSupabaseCloudRecords,
       }}
     >
       {children}

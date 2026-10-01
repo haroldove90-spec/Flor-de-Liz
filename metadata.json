@@ -1,6 +1,6 @@
 {
   "name": "Comercializadora Flor de Líz",
-  "description": "Sistema integral de gestión de catálogo, ventas, pedidos y clientes para Comercializadora Flor de Líz con soporte PWA y acceso por roles.",
+  "description": "Sistema de gestión de catálogo, ventas y pedidos de suministros médicos y material de curación para Comercializadora Flor de Líz.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
