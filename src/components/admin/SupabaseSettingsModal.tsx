@@ -126,6 +126,20 @@ CREATE TABLE IF NOT EXISTS flor_employees (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 5. TABLA DE PERFILES Y FOTOS DE PERFIL (Administrador y Vendedor)
+CREATE TABLE IF NOT EXISTS flor_profiles (
+  id TEXT PRIMARY KEY,
+  role TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  business_name TEXT,
+  email TEXT,
+  phone TEXT,
+  whatsapp TEXT,
+  address TEXT,
+  photo_url TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ÍNDICES PARA BÚSQUEDA RÁPIDA
 CREATE INDEX IF NOT EXISTS idx_products_code ON flor_products(code);
 CREATE INDEX IF NOT EXISTS idx_products_category ON flor_products(category);
@@ -137,6 +151,7 @@ ALTER TABLE flor_products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE flor_clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE flor_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE flor_employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE flor_profiles ENABLE ROW LEVEL SECURITY;
 
 -- POLÍTICAS PÚBLICAS PARA ACCESO DESDE LA APP
 DROP POLICY IF EXISTS "Public access flor_products" ON flor_products;
@@ -150,6 +165,14 @@ CREATE POLICY "Public access flor_orders" ON flor_orders FOR ALL USING (true) WI
 
 DROP POLICY IF EXISTS "Public access flor_employees" ON flor_employees;
 CREATE POLICY "Public access flor_employees" ON flor_employees FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public access flor_profiles" ON flor_profiles;
+CREATE POLICY "Public access flor_profiles" ON flor_profiles FOR ALL USING (true) WITH CHECK (true);
+
+-- ACTUALIZACIÓN DE COLUMNAS OPCIONALES PARA EMPLEADOS (Si ya creaste la tabla antes)
+ALTER TABLE flor_employees ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE flor_employees ADD COLUMN IF NOT EXISTS password TEXT;
+ALTER TABLE flor_employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
 `;
 
   const handleCopySql = () => {

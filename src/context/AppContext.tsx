@@ -4,6 +4,7 @@ import {
   Product,
   Client,
   Order,
+  OrderItem,
   Employee,
   NotificationItem,
   UserProfile,
@@ -25,7 +26,9 @@ interface AppContextType {
   adminProfile: UserProfile;
   vendedorProfile: UserProfile;
   clienteProfile: UserProfile;
-  updateProfile: (role: UserRole, profile: Partial<UserProfile>) => void;
+  updateProfile: (role: UserRole, profile: Partial<UserProfile>) => Promise<{ success: boolean; message: string }>;
+  saveProfileToSupabase: (role: UserRole, profile: Partial<UserProfile>) => Promise<{ success: boolean; message: string }>;
+  fetchProfileFromSupabase: (role?: UserRole) => Promise<void>;
 
   // Products
   products: Product[];
@@ -39,7 +42,9 @@ interface AppContextType {
 
   // Supabase Cloud Sync Status
   supabaseProductsCount: number | null;
+  supabaseEmployeesCount: number | null;
   isSyncingCloud: boolean;
+  isSyncingEmployees: boolean;
   syncProgress: { current: number; total: number } | null;
 
   // Clients
@@ -48,6 +53,7 @@ interface AppContextType {
   updateClient: (id: string, client: Partial<Client>) => void;
   deleteClient: (id: string) => void;
   toggleClientActive: (id: string) => void;
+  fetchClientsFromSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
 
   // Orders / Sales
   orders: Order[];
@@ -66,12 +72,15 @@ interface AppContextType {
   }) => Order;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   deleteOrder: (orderId: string) => void;
+  fetchOrdersFromSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
 
   // Employees
   employees: Employee[];
-  addEmployee: (employee: Omit<Employee, 'id' | 'createdAt'>) => Employee;
-  updateEmployee: (id: string, employee: Partial<Employee>) => void;
-  deleteEmployee: (id: string) => void;
+  addEmployee: (employee: Omit<Employee, 'id' | 'createdAt'>) => Promise<{ success: boolean; employee: Employee; message: string }>;
+  updateEmployee: (id: string, employee: Partial<Employee>) => Promise<{ success: boolean; message: string }>;
+  deleteEmployee: (id: string) => Promise<{ success: boolean; message: string }>;
+  fetchEmployeesFromSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
+  uploadEmployeesToSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
 
   // Notifications
   notifications: NotificationItem[];
@@ -427,25 +436,240 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : DEFAULT_CLIENTE_PROFILE;
   });
 
-  const updateProfile = (role: UserRole, update: Partial<UserProfile>) => {
+  // Supabase Config initialized with user's project
+  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.SUPABASE_CONFIG);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.projectId === 'ylzgfsvcibqsztarglja') return parsed;
+      } catch {
+        // use default
+      }
+    }
+    return DEFAULT_SUPABASE_CONFIG;
+  });
+
+  // Supabase Cloud Sync Status
+  const [supabaseProductsCount, setSupabaseProductsCount] = useState<number | null>(null);
+  const [supabaseEmployeesCount, setSupabaseEmployeesCount] = useState<number | null>(null);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [isSyncingEmployees, setIsSyncingEmployees] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+
+  // Profile Save to Supabase: saves to flor_profiles (if exists) and flor_employees (guaranteed)
+  const saveProfileToSupabase = async (
+    role: UserRole,
+    profileData: Partial<UserProfile>
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!supabaseConfig.url || !supabaseConfig.anonKey) {
+      return { success: false, message: 'Supabase no está configurado.' };
+    }
+
+    const currentProfile: UserProfile =
+      role === 'admin'
+        ? { ...adminProfile, ...profileData }
+        : role === 'vendedor'
+        ? { ...vendedorProfile, ...profileData }
+        : { ...clienteProfile, ...profileData };
+
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+
+      // 1. Try to upsert into flor_profiles (if user created the dedicated table)
+      try {
+        await fetch(`${cleanUrl}/flor_profiles`, {
+          method: 'POST',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates',
+          },
+          body: JSON.stringify({
+            id: `profile_${role}`,
+            role,
+            name: currentProfile.name,
+            business_name: currentProfile.businessName || '',
+            email: currentProfile.email,
+            phone: currentProfile.phone || '',
+            whatsapp: currentProfile.whatsapp || '',
+            address: currentProfile.address || '',
+            photo_url: currentProfile.photoUrl || '',
+          }),
+        });
+      } catch {
+        // If flor_profiles table is not yet created, we continue to flor_employees
+      }
+
+      // 2. Upsert into flor_employees (already provisioned and tested in Supabase)
+      // Stores photoUrl, address, businessName in access_code JSON
+      const meta = {
+        photoUrl: currentProfile.photoUrl || '',
+        address: currentProfile.address || '',
+        businessName: currentProfile.businessName || '',
+        notes: currentProfile.notes || '',
+      };
+
+      const employeePayload = {
+        id: `profile_${role}`,
+        name: currentProfile.name || (role === 'admin' ? 'Dirección General' : 'Vendedor'),
+        position: currentProfile.businessName || (role === 'admin' ? 'Dirección General' : 'Asesor Comercial'),
+        email: currentProfile.email || `${role}@flordelizmed.com`,
+        phone: currentProfile.phone || '',
+        whatsapp: currentProfile.whatsapp || '',
+        access_code: JSON.stringify(meta),
+        role: role === 'admin' ? 'admin' : 'vendedor',
+        active: true,
+        sales_count: 0,
+        total_sold: 0.0,
+      };
+
+      const res = await fetch(`${cleanUrl}/flor_employees`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(employeePayload),
+      });
+
+      if (res.ok || res.status === 201 || res.status === 200) {
+        return { success: true, message: '¡Datos y foto de perfil guardados en Supabase!' };
+      } else {
+        const errorText = await res.text();
+        return { success: false, message: `Guardado en dispositivo local. Supabase: ${errorText}` };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error desconocido';
+      return { success: false, message: `Guardado en dispositivo local: ${msg}` };
+    }
+  };
+
+  const updateProfile = async (
+    role: UserRole,
+    update: Partial<UserProfile>
+  ): Promise<{ success: boolean; message: string }> => {
+    let nextProfile: UserProfile;
     if (role === 'admin') {
-      setAdminProfile((prev) => {
-        const next = { ...prev, ...update };
-        localStorage.setItem(STORAGE_KEYS.ADMIN_PROFILE, JSON.stringify(next));
-        return next;
-      });
+      nextProfile = { ...adminProfile, ...update };
+      setAdminProfile(nextProfile);
+      localStorage.setItem(STORAGE_KEYS.ADMIN_PROFILE, JSON.stringify(nextProfile));
     } else if (role === 'vendedor') {
-      setVendedorProfile((prev) => {
-        const next = { ...prev, ...update };
-        localStorage.setItem(STORAGE_KEYS.VENDEDOR_PROFILE, JSON.stringify(next));
-        return next;
+      nextProfile = { ...vendedorProfile, ...update };
+      setVendedorProfile(nextProfile);
+      localStorage.setItem(STORAGE_KEYS.VENDEDOR_PROFILE, JSON.stringify(nextProfile));
+    } else {
+      nextProfile = { ...clienteProfile, ...update };
+      setClienteProfile(nextProfile);
+      localStorage.setItem(STORAGE_KEYS.CLIENTE_PROFILE, JSON.stringify(nextProfile));
+    }
+
+    return await saveProfileToSupabase(role, nextProfile);
+  };
+
+  const fetchProfileFromSupabase = async (targetRole?: UserRole) => {
+    if (!supabaseConfig.url || !supabaseConfig.anonKey) return;
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+
+      // Check flor_profiles first
+      try {
+        const pRes = await fetch(`${cleanUrl}/flor_profiles?select=*`, {
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          },
+        });
+        if (pRes.ok) {
+          const profiles: Record<string, unknown>[] = await pRes.json();
+          if (profiles && profiles.length > 0) {
+            for (const p of profiles) {
+              const r = String(p.role || '');
+              const profileObj: Partial<UserProfile> = {
+                name: String(p.name || ''),
+                businessName: String(p.business_name || ''),
+                email: String(p.email || ''),
+                phone: String(p.phone || ''),
+                whatsapp: String(p.whatsapp || ''),
+                address: String(p.address || ''),
+                photoUrl: String(p.photo_url || ''),
+              };
+              if (r === 'admin') {
+                setAdminProfile((prev) => ({ ...prev, ...profileObj }));
+              } else if (r === 'vendedor') {
+                setVendedorProfile((prev) => ({ ...prev, ...profileObj }));
+              }
+            }
+            return;
+          }
+        }
+      } catch {
+        // Fallback to flor_employees
+      }
+
+      // Fallback: Check flor_employees for profile records
+      const empRes = await fetch(`${cleanUrl}/flor_employees?id=like.profile_*`, {
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
       });
-    } else if (role === 'cliente') {
-      setClienteProfile((prev) => {
-        const next = { ...prev, ...update };
-        localStorage.setItem(STORAGE_KEYS.CLIENTE_PROFILE, JSON.stringify(next));
-        return next;
-      });
+
+      if (empRes.ok) {
+        const records: Record<string, unknown>[] = await empRes.json();
+        for (const row of records) {
+          let photoUrl = '';
+          let address = '';
+          let businessName = String(row.position || '');
+          if (row.access_code && typeof row.access_code === 'string') {
+            try {
+              const parsed = JSON.parse(row.access_code);
+              photoUrl = parsed.photoUrl || '';
+              address = parsed.address || '';
+              businessName = parsed.businessName || businessName;
+            } catch {
+              // Not JSON
+            }
+          }
+
+          if (row.id === 'profile_admin') {
+            setAdminProfile((prev) => {
+              const next = {
+                ...prev,
+                name: String(row.name || prev.name),
+                email: String(row.email || prev.email),
+                phone: String(row.phone || prev.phone),
+                whatsapp: String(row.whatsapp || prev.whatsapp),
+                businessName: businessName || prev.businessName,
+                address: address || prev.address,
+                photoUrl: photoUrl || prev.photoUrl,
+              };
+              localStorage.setItem(STORAGE_KEYS.ADMIN_PROFILE, JSON.stringify(next));
+              return next;
+            });
+          } else if (row.id === 'profile_vendedor') {
+            setVendedorProfile((prev) => {
+              const next = {
+                ...prev,
+                name: String(row.name || prev.name),
+                email: String(row.email || prev.email),
+                phone: String(row.phone || prev.phone),
+                whatsapp: String(row.whatsapp || prev.whatsapp),
+                businessName: businessName || prev.businessName,
+                address: address || prev.address,
+                photoUrl: photoUrl || prev.photoUrl,
+              };
+              localStorage.setItem(STORAGE_KEYS.VENDEDOR_PROFILE, JSON.stringify(next));
+              return next;
+            });
+          }
+        }
+      }
+    } catch {
+      // Ignore network errors
     }
   };
 
@@ -499,25 +723,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
-
-  // Supabase Config initialized with user's project
-  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.SUPABASE_CONFIG);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.projectId === 'ylzgfsvcibqsztarglja') return parsed;
-      } catch {
-        // use default
-      }
-    }
-    return DEFAULT_SUPABASE_CONFIG;
-  });
-
-  // Supabase Cloud Sync Status
-  const [supabaseProductsCount, setSupabaseProductsCount] = useState<number | null>(null);
-  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Save changes to localStorage
   useEffect(() => {
@@ -794,30 +999,154 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: false, count: 0, message: 'No se encontraron productos para importar.' };
   };
 
-  // Client Operations
-  const addClient = (clientData: Omit<Client, 'id' | 'createdAt'>) => {
+  // Client Operations with Supabase Sync
+  const addClient = (clientData: Omit<Client, 'id' | 'createdAt'>): Client => {
     const newClient: Client = {
       ...clientData,
       id: `cli_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
     };
     setClients((prev) => [newClient, ...prev]);
+
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      fetch(`${cleanUrl}/flor_clients`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          id: newClient.id,
+          name: newClient.name,
+          business_name: newClient.businessName || '',
+          rfc: newClient.rfc || '',
+          address: newClient.address || '',
+          phone: newClient.phone || '',
+          whatsapp: newClient.whatsapp || '',
+          email: newClient.email || '',
+          active: newClient.active !== false,
+          notes: newClient.notes || '',
+          created_at: newClient.createdAt,
+        }),
+      }).catch(() => {});
+    } catch {
+      // Handled silently
+    }
     return newClient;
   };
 
-  const updateClient = (id: string, updated: Partial<Client>) => {
-    setClients((prev) => prev.map((c) => (c.id === id ? { ...c, ...updated } : c)));
+  const updateClient = (id: string, updated: Partial<Client>): void => {
+    let clientToUpdate: Client | undefined;
+    setClients((prev) =>
+      prev.map((c) => {
+        if (c.id === id) {
+          clientToUpdate = { ...c, ...updated };
+          return clientToUpdate;
+        }
+        return c;
+      })
+    );
+
+    if (clientToUpdate) {
+      try {
+        const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+        fetch(`${cleanUrl}/flor_clients?id=eq.${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: clientToUpdate.name,
+            business_name: clientToUpdate.businessName || '',
+            rfc: clientToUpdate.rfc || '',
+            address: clientToUpdate.address || '',
+            phone: clientToUpdate.phone || '',
+            whatsapp: clientToUpdate.whatsapp || '',
+            email: clientToUpdate.email || '',
+            active: clientToUpdate.active !== false,
+            notes: clientToUpdate.notes || '',
+          }),
+        }).catch(() => {});
+      } catch {
+        // Handled silently
+      }
+    }
   };
 
-  const deleteClient = (id: string) => {
+  const deleteClient = (id: string): void => {
     setClients((prev) => prev.filter((c) => c.id !== id));
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      fetch(`${cleanUrl}/flor_clients?id=eq.${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      }).catch(() => {});
+    } catch {
+      // Handled silently
+    }
   };
 
   const toggleClientActive = (id: string) => {
-    setClients((prev) => prev.map((c) => (c.id === id ? { ...c, active: !c.active } : c)));
+    setClients((prev) =>
+      prev.map((c) => {
+        if (c.id === id) {
+          const updated = { ...c, active: !c.active };
+          updateClient(id, { active: updated.active });
+          return updated;
+        }
+        return c;
+      })
+    );
   };
 
-  // Order Operations
+  const fetchClientsFromSupabase = async (): Promise<{ success: boolean; count: number; message: string }> => {
+    if (!supabaseConfig.url || !supabaseConfig.anonKey) {
+      return { success: false, count: 0, message: 'Supabase no configurado' };
+    }
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const res = await fetch(`${cleanUrl}/flor_clients?order=created_at.desc`, {
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      if (res.ok) {
+        const rows: Record<string, unknown>[] = await res.json();
+        if (rows && rows.length > 0) {
+          const loaded: Client[] = rows.map((r) => ({
+            id: String(r.id),
+            name: String(r.name || 'Cliente'),
+            businessName: String(r.business_name || ''),
+            rfc: String(r.rfc || ''),
+            address: String(r.address || ''),
+            phone: String(r.phone || ''),
+            whatsapp: String(r.whatsapp || ''),
+            email: String(r.email || ''),
+            active: r.active !== false,
+            notes: String(r.notes || ''),
+            createdAt: String(r.created_at || new Date().toISOString()),
+          }));
+          setClients(loaded);
+          return { success: true, count: loaded.length, message: `${loaded.length} clientes cargados desde Supabase.` };
+        }
+      }
+      return { success: true, count: 0, message: 'No hay clientes en Supabase.' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count: 0, message: `Error al cargar clientes: ${msg}` };
+    }
+  };
+
+  // Order Operations with Supabase Sync
   const createOrder = (orderData: {
     clientId: string;
     clientName: string;
@@ -890,7 +1219,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
     );
 
-    // Update Employee
+    // Update Employee sales
     if (orderData.vendedorId) {
       setEmployees((prev) =>
         prev.map((emp) =>
@@ -905,20 +1234,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     }
 
-    // Notify Admin
+    // Save order in Supabase in background
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      fetch(`${cleanUrl}/flor_orders`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          id: newOrder.id,
+          order_number: newOrder.orderNumber,
+          client_id: newOrder.clientId,
+          client_name: newOrder.clientName,
+          client_business: newOrder.clientBusiness || '',
+          client_phone: newOrder.clientPhone || '',
+          client_whatsapp: newOrder.clientWhatsapp || '',
+          client_address: newOrder.clientAddress || '',
+          items: newOrder.items,
+          subtotal: newOrder.subtotal,
+          discount_total: newOrder.discountTotal,
+          total: newOrder.total,
+          status: newOrder.status,
+          vendedor_id: newOrder.vendedorId || '',
+          vendedor_name: newOrder.vendedorName || '',
+          source: newOrder.source,
+          notes: newOrder.notes || '',
+          created_at: newOrder.createdAt,
+          updated_at: newOrder.updatedAt,
+        }),
+      }).catch(() => {});
+    } catch {
+      // Handled silently
+    }
+
+    // Notify Admin & Client
     const creatorLabel = orderData.source === 'cliente_whatsapp' ? 'el cliente' : orderData.vendedorName || 'un vendedor';
     addNotification({
       title: '¡Nuevo Pedido de Material Médico!',
-      message: `Pedido #${orderNumber} registrado por ${creatorLabel} para "${orderData.clientName}". Total: $${total.toFixed(2)} MXN. Dar seguimiento a empaque y surtido.`,
+      message: `Pedido #${orderNumber} registrado por ${creatorLabel} para "${orderData.clientName}". Total: $${total.toFixed(2)} MXN.`,
       type: 'order_created',
       targetRole: 'admin',
       orderId: newOrder.id,
     });
 
-    // Notify Client
     addNotification({
       title: 'Tu pedido médico está En Proceso',
-      message: `Hemos recibido tu solicitud #${orderNumber} por $${total.toFixed(2)} MXN y se encuentra en almacén para preparación de lote.`,
+      message: `Hemos recibido tu solicitud #${orderNumber} por $${total.toFixed(2)} MXN y se encuentra en preparación.`,
       type: 'status_updated',
       targetRole: 'cliente',
       targetUserId: orderData.clientId,
@@ -928,11 +1293,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newOrder;
   };
 
-  const updateOrderStatus = (orderId: string, status: OrderStatus) => {
+  const updateOrderStatus = (orderId: string, status: OrderStatus): void => {
+    let targetOrder: Order | undefined;
     setOrders((prev) =>
       prev.map((o) => {
         if (o.id === orderId) {
-          const updated = { ...o, status, updatedAt: new Date().toISOString() };
+          targetOrder = { ...o, status, updatedAt: new Date().toISOString() };
           addNotification({
             title: `Estatus de Envío #${o.orderNumber}: ${status}`,
             message: `Tu pedido #${o.orderNumber} ha pasado a estatus "${status}".`,
@@ -941,36 +1307,382 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             targetUserId: o.clientId,
             orderId: o.id,
           });
-          return updated;
+          return targetOrder;
         }
         return o;
       })
     );
+
+    if (targetOrder) {
+      try {
+        const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+        fetch(`${cleanUrl}/flor_orders?id=eq.${encodeURIComponent(orderId)}`, {
+          method: 'PATCH',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status,
+            updated_at: new Date().toISOString(),
+          }),
+        }).catch(() => {});
+      } catch {
+        // Handled silently
+      }
+    }
   };
 
-  const deleteOrder = (orderId: string) => {
+  const deleteOrder = (orderId: string): void => {
     setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      fetch(`${cleanUrl}/flor_orders?id=eq.${encodeURIComponent(orderId)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      }).catch(() => {});
+    } catch {
+      // Handled silently
+    }
   };
 
-  // Employee Operations
-  const addEmployee = (employeeData: Omit<Employee, 'id' | 'createdAt'>) => {
+  const fetchOrdersFromSupabase = async (): Promise<{ success: boolean; count: number; message: string }> => {
+    if (!supabaseConfig.url || !supabaseConfig.anonKey) {
+      return { success: false, count: 0, message: 'Supabase no configurado' };
+    }
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const res = await fetch(`${cleanUrl}/flor_orders?order=created_at.desc`, {
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      if (res.ok) {
+        const rows: Record<string, unknown>[] = await res.json();
+        if (rows && rows.length > 0) {
+          const loaded: Order[] = rows.map((r) => ({
+            id: String(r.id),
+            orderNumber: String(r.order_number),
+            clientId: String(r.client_id || ''),
+            clientName: String(r.client_name || 'Cliente'),
+            clientBusiness: String(r.client_business || ''),
+            clientPhone: String(r.client_phone || ''),
+            clientWhatsapp: String(r.client_whatsapp || ''),
+            clientAddress: String(r.client_address || ''),
+            items: (r.items as OrderItem[]) || [],
+            subtotal: Number(r.subtotal) || 0,
+            discountTotal: Number(r.discount_total) || 0,
+            total: Number(r.total) || 0,
+            status: (r.status as OrderStatus) || 'En proceso',
+            vendedorId: String(r.vendedor_id || ''),
+            vendedorName: String(r.vendedor_name || ''),
+            notes: String(r.notes || ''),
+            source: (r.source as any) || 'vendedor',
+            createdAt: String(r.created_at || new Date().toISOString()),
+            updatedAt: String(r.updated_at || new Date().toISOString()),
+          }));
+          setOrders(loaded);
+          return { success: true, count: loaded.length, message: `${loaded.length} pedidos cargados desde Supabase.` };
+        }
+      }
+      return { success: true, count: 0, message: 'No hay pedidos en Supabase.' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count: 0, message: `Error al consultar pedidos: ${msg}` };
+    }
+  };
+
+  // Employee Operations with Automatic Supabase Sync
+  const addEmployee = async (
+    employeeData: Omit<Employee, 'id' | 'createdAt'>
+  ): Promise<{ success: boolean; employee: Employee; message: string }> => {
     const newEmp: Employee = {
       ...employeeData,
-      id: `emp_${Date.now()}`,
+      id: `emp_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       salesCount: 0,
       totalSold: 0,
       createdAt: new Date().toISOString(),
     };
     setEmployees((prev) => [newEmp, ...prev]);
-    return newEmp;
+
+    // Send immediately to Supabase flor_employees
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const credsString = newEmp.password
+        ? `${newEmp.username || newEmp.email.split('@')[0]}:::${newEmp.password}`
+        : (newEmp.accessCode || '');
+
+      const payload = {
+        id: newEmp.id,
+        name: newEmp.name,
+        position: newEmp.position || 'Asesor Comercial',
+        email: newEmp.email,
+        phone: newEmp.phone || '',
+        whatsapp: newEmp.whatsapp || '',
+        access_code: credsString,
+        role: newEmp.role || 'vendedor',
+        active: newEmp.active !== false,
+        sales_count: 0,
+        total_sold: 0.0,
+      };
+
+      const res = await fetch(`${cleanUrl}/flor_employees`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok || res.status === 201 || res.status === 200) {
+        setSupabaseEmployeesCount((prev) => (prev !== null ? prev + 1 : 1));
+        return {
+          success: true,
+          employee: newEmp,
+          message: '¡Empleado guardado y sincronizado con éxito en Supabase!',
+        };
+      } else {
+        const errorText = await res.text();
+        return {
+          success: false,
+          employee: newEmp,
+          message: `Guardado en dispositivo local. Supabase respondió: ${errorText}`,
+        };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error desconocido';
+      return {
+        success: false,
+        employee: newEmp,
+        message: `Guardado en dispositivo local: ${msg}`,
+      };
+    }
   };
 
-  const updateEmployee = (id: string, updated: Partial<Employee>) => {
-    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...updated } : e)));
+  const updateEmployee = async (
+    id: string,
+    updated: Partial<Employee>
+  ): Promise<{ success: boolean; message: string }> => {
+    let updatedEmp: Employee | undefined;
+    setEmployees((prev) =>
+      prev.map((e) => {
+        if (e.id === id) {
+          updatedEmp = { ...e, ...updated };
+          return updatedEmp;
+        }
+        return e;
+      })
+    );
+
+    if (!updatedEmp) {
+      return { success: false, message: 'Empleado no encontrado' };
+    }
+
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const credsString = updatedEmp.password
+        ? `${updatedEmp.username || updatedEmp.email.split('@')[0]}:::${updatedEmp.password}`
+        : (updatedEmp.accessCode || '');
+
+      const payload = {
+        name: updatedEmp.name,
+        position: updatedEmp.position || 'Asesor Comercial',
+        email: updatedEmp.email,
+        phone: updatedEmp.phone || '',
+        whatsapp: updatedEmp.whatsapp || '',
+        access_code: credsString,
+        role: updatedEmp.role || 'vendedor',
+        active: updatedEmp.active !== false,
+      };
+
+      const res = await fetch(`${cleanUrl}/flor_employees?id=eq.${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok || res.status === 204 || res.status === 200) {
+        return { success: true, message: '¡Empleado actualizado con éxito en Supabase!' };
+      } else {
+        return { success: false, message: `Error al actualizar en Supabase: Código ${res.status}` };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error desconocido';
+      return { success: false, message: `Error de red al actualizar: ${msg}` };
+    }
   };
 
-  const deleteEmployee = (id: string) => {
+  const deleteEmployee = async (
+    id: string
+  ): Promise<{ success: boolean; message: string }> => {
     setEmployees((prev) => prev.filter((e) => e.id !== id));
+
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const res = await fetch(`${cleanUrl}/flor_employees?id=eq.${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+
+      if (res.ok || res.status === 204 || res.status === 200) {
+        setSupabaseEmployeesCount((prev) => (prev !== null && prev > 0 ? prev - 1 : 0));
+        return { success: true, message: 'Empleado eliminado de Supabase.' };
+      } else {
+        return { success: false, message: `Eliminado localmente. Supabase respondió: ${res.status}` };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error desconocido';
+      return { success: false, message: `Eliminado en memoria local: ${msg}` };
+    }
+  };
+
+  const fetchEmployeesFromSupabase = async (): Promise<{ success: boolean; count: number; message: string }> => {
+    if (!supabaseConfig.url || !supabaseConfig.anonKey) {
+      return { success: false, count: 0, message: 'Supabase no configurado' };
+    }
+    setIsSyncingEmployees(true);
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const res = await fetch(
+        `${cleanUrl}/flor_employees?id=not.like.profile_*&order=created_at.desc`,
+        {
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          },
+        }
+      );
+
+      if (!res.ok) {
+        setIsSyncingEmployees(false);
+        return { success: false, count: 0, message: `Error ${res.status} al consultar empleados` };
+      }
+
+      const rows: Record<string, unknown>[] = await res.json();
+      setSupabaseEmployeesCount(rows.length);
+
+      if (rows && rows.length > 0) {
+        const loaded: Employee[] = rows.map((r) => {
+          const rawAccess = String(r.access_code || '');
+          let username = String(r.username || '');
+          let password = String(r.password || '');
+
+          if (rawAccess.includes(':::')) {
+            const parts = rawAccess.split(':::');
+            username = username || parts[0];
+            password = password || parts[1];
+          } else if (!password && rawAccess) {
+            password = rawAccess;
+          }
+
+          const email = String(r.email || '');
+          if (!username) {
+            username = email.includes('@') ? email.split('@')[0] : 'vendedor';
+          }
+          if (!password) {
+            password = 'Flor2026$Med';
+          }
+
+          return {
+            id: String(r.id),
+            name: String(r.name || 'Empleado'),
+            position: String(r.position || 'Asesor Comercial'),
+            email,
+            username,
+            password,
+            accessCode: password,
+            phone: String(r.phone || ''),
+            whatsapp: String(r.whatsapp || r.phone || ''),
+            role: (r.role === 'admin' ? 'admin' : 'vendedor') as 'admin' | 'vendedor',
+            active: r.active !== false,
+            salesCount: Number(r.sales_count) || 0,
+            totalSold: Number(r.total_sold) || 0,
+            createdAt: String(r.created_at || new Date().toISOString()),
+          };
+        });
+
+        setEmployees(loaded);
+        setIsSyncingEmployees(false);
+        return { success: true, count: loaded.length, message: `Se cargaron ${loaded.length} empleados desde Supabase.` };
+      } else {
+        setIsSyncingEmployees(false);
+        return { success: true, count: 0, message: 'No hay empleados en Supabase aún.' };
+      }
+    } catch (err: unknown) {
+      setIsSyncingEmployees(false);
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count: 0, message: `Error al sincronizar empleados: ${msg}` };
+    }
+  };
+
+  const uploadEmployeesToSupabase = async (): Promise<{ success: boolean; count: number; message: string }> => {
+    if (!supabaseConfig.url || !supabaseConfig.anonKey) {
+      return { success: false, count: 0, message: 'Supabase no configurado' };
+    }
+    const listToPush = employees.filter((e) => !e.id.startsWith('profile_'));
+    if (listToPush.length === 0) {
+      return { success: false, count: 0, message: 'No hay empleados para sincronizar.' };
+    }
+    setIsSyncingEmployees(true);
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      let count = 0;
+      for (const emp of listToPush) {
+        const credsString = emp.password
+          ? `${emp.username || emp.email.split('@')[0]}:::${emp.password}`
+          : (emp.accessCode || '');
+
+        const payload = {
+          id: emp.id,
+          name: emp.name,
+          position: emp.position || 'Asesor Comercial',
+          email: emp.email,
+          phone: emp.phone || '',
+          whatsapp: emp.whatsapp || '',
+          access_code: credsString,
+          role: emp.role || 'vendedor',
+          active: emp.active !== false,
+          sales_count: emp.salesCount || 0,
+          total_sold: emp.totalSold || 0.0,
+        };
+
+        const res = await fetch(`${cleanUrl}/flor_employees`, {
+          method: 'POST',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates',
+          },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok || res.status === 200 || res.status === 201) {
+          count++;
+        }
+      }
+      setSupabaseEmployeesCount(count);
+      setIsSyncingEmployees(false);
+      return { success: true, count, message: `¡${count} empleados sincronizados con Supabase!` };
+    } catch (err: unknown) {
+      setIsSyncingEmployees(false);
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count: 0, message: `Error al subir empleados: ${msg}` };
+    }
   };
 
   // Notification Operations
@@ -1087,10 +1799,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Automatically fetch products from Supabase on mount
+  // Automatically fetch products, employees, profiles, clients, and orders from Supabase on mount
   useEffect(() => {
     if (supabaseConfig.url && supabaseConfig.anonKey) {
       fetchProductsFromSupabase();
+      fetchEmployeesFromSupabase();
+      fetchProfileFromSupabase();
+      fetchClientsFromSupabase();
+      fetchOrdersFromSupabase();
     }
   }, []);
 
@@ -1313,6 +2029,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         vendedorProfile,
         clienteProfile,
         updateProfile,
+        saveProfileToSupabase,
+        fetchProfileFromSupabase,
         products,
         addProduct,
         updateProduct,
@@ -1326,14 +2044,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateClient,
         deleteClient,
         toggleClientActive,
+        fetchClientsFromSupabase,
         orders,
         createOrder,
         updateOrderStatus,
         deleteOrder,
+        fetchOrdersFromSupabase,
         employees,
         addEmployee,
         updateEmployee,
         deleteEmployee,
+        fetchEmployeesFromSupabase,
+        uploadEmployeesToSupabase,
         notifications,
         addNotification,
         markNotificationAsRead,
@@ -1355,7 +2077,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         fetchProductsFromSupabase,
         clearSupabaseCloudRecords,
         supabaseProductsCount,
+        supabaseEmployeesCount,
         isSyncingCloud,
+        isSyncingEmployees,
         syncProgress,
       }}
     >

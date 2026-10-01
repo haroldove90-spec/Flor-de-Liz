@@ -20,6 +20,10 @@ import {
   ShieldCheck,
   User,
   AlertTriangle,
+  Cloud,
+  CloudUpload,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Employee } from '../../types';
@@ -28,7 +32,17 @@ import { createWhatsAppEmployeeInviteLink } from '../../utils/pdfExport';
 const SYSTEM_APP_URL = 'https://flor-de-liz-phi.vercel.app/';
 
 export const AdminEmployees: React.FC = () => {
-  const { employees, addEmployee, updateEmployee, deleteEmployee } = useApp();
+  const {
+    employees,
+    addEmployee,
+    updateEmployee,
+    deleteEmployee,
+    supabaseConfig,
+    supabaseEmployeesCount,
+    isSyncingEmployees,
+    fetchEmployeesFromSupabase,
+    uploadEmployeesToSupabase,
+  } = useApp();
 
   const [showModal, setShowModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -43,6 +57,11 @@ export const AdminEmployees: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [role, setRole] = useState<'vendedor' | 'admin'>('vendedor');
+
+  // Supabase operation states
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [syncBanner, setSyncBanner] = useState<{ type: 'success' | 'warning' | 'info'; text: string } | null>(null);
 
   // Shared credentials modal after creation or on-demand
   const [sharedCredentialsModal, setSharedCredentialsModal] = useState<Employee | null>(null);
@@ -118,7 +137,7 @@ export const AdminEmployees: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email) {
       alert('Por favor completa el nombre y correo del empleado.');
@@ -130,8 +149,9 @@ export const AdminEmployees: React.FC = () => {
       (name ? name.toLowerCase().replace(/\s+/g, '.') : email.split('@')[0]);
     const finalPassword = password.trim() || 'Flor2026$Med';
 
+    setIsSaving(true);
     if (editingEmployee) {
-      updateEmployee(editingEmployee.id, {
+      const res = await updateEmployee(editingEmployee.id, {
         name,
         position,
         email,
@@ -142,9 +162,15 @@ export const AdminEmployees: React.FC = () => {
         accessCode: finalPassword,
         role,
       });
+      setIsSaving(false);
       setShowModal(false);
+      setSyncBanner({
+        type: res.success ? 'success' : 'warning',
+        text: res.message || 'Empleado actualizado con éxito.',
+      });
+      setTimeout(() => setSyncBanner(null), 4500);
     } else {
-      const newEmp = addEmployee({
+      const res = await addEmployee({
         name,
         position,
         email,
@@ -156,9 +182,15 @@ export const AdminEmployees: React.FC = () => {
         role,
         active: true,
       });
+      setIsSaving(false);
       setShowModal(false);
-      // Automatically open the share modal so admin can copy/share credentials
-      setSharedCredentialsModal(newEmp);
+      setSyncBanner({
+        type: res.success ? 'success' : 'warning',
+        text: res.message || 'Empleado registrado con éxito.',
+      });
+      setTimeout(() => setSyncBanner(null), 4500);
+      // Automatically open the share modal with new employee credentials
+      setSharedCredentialsModal(res.employee);
     }
   };
 
@@ -228,23 +260,90 @@ export const AdminEmployees: React.FC = () => {
         </button>
       </div>
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-stone-200/80">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-[#1B1A18] tracking-tight">
-            Gestión de Empleados y Vendedores
-          </h1>
-          <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-            Crea credenciales con usuario, contraseña segura y compártelas junto al enlace oficial del sistema
-          </p>
-        </div>
-        <button
-          onClick={handleOpenNew}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white text-xs sm:text-sm font-bold shadow-md transition cursor-pointer self-start sm:self-auto"
+      {/* Feedback Banner for Supabase operations */}
+      {syncBanner && (
+        <div
+          className={`p-3.5 rounded-2xl border text-xs flex items-center gap-2.5 animate-in fade-in ${
+            syncBanner.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : syncBanner.type === 'warning'
+              ? 'bg-amber-50 border-amber-200 text-amber-900'
+              : 'bg-blue-50 border-blue-200 text-blue-900'
+          }`}
         >
-          <UserPlus className="w-4 h-4 text-[#C9B368]" />
-          Registrar Nuevo Empleado
-        </button>
+          {syncBanner.type === 'success' ? (
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          )}
+          <span className="font-medium">{syncBanner.text}</span>
+        </div>
+      )}
+
+      {/* Header and Cloud Bar */}
+      <div className="flex flex-col gap-3 pb-2 border-b border-stone-200/80">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-[#1B1A18] tracking-tight">
+              Gestión de Empleados y Vendedores
+            </h1>
+            <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
+              Crea credenciales con usuario, contraseña segura y compártelas junto al enlace oficial del sistema
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <button
+              onClick={async () => {
+                setSyncBanner({ type: 'info', text: 'Sincronizando empleados con Supabase...' });
+                const res = await uploadEmployeesToSupabase();
+                setSyncBanner({
+                  type: res.success ? 'success' : 'warning',
+                  text: res.message,
+                });
+                setTimeout(() => setSyncBanner(null), 4000);
+              }}
+              disabled={isSyncingEmployees}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
+              title="Sincronizar y respaldar todos los empleados en la base de datos Supabase"
+            >
+              {isSyncingEmployees ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-600" />
+              ) : (
+                <RefreshCw className="w-3.5 h-3.5 text-stone-600" />
+              )}
+              <span>{isSyncingEmployees ? 'Sincronizando...' : 'Sincronizar Supabase'}</span>
+            </button>
+
+            <button
+              onClick={handleOpenNew}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white text-xs sm:text-sm font-bold shadow-md transition cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4 text-[#C9B368]" />
+              Registrar Nuevo Empleado
+            </button>
+          </div>
+        </div>
+
+        {/* Supabase connection badge strip */}
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-stone-50 border border-stone-200/80 text-xs">
+          <div className="flex items-center gap-2 text-stone-600">
+            <Cloud className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              Proyecto Supabase: <span className="font-mono font-bold text-stone-900">{supabaseConfig.projectId || 'ylzgfsvcibqsztarglja'}</span>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 text-stone-600">
+            <span>
+              En Nube:{' '}
+              <b className="text-emerald-700 font-bold">
+                {supabaseEmployeesCount !== null ? `${supabaseEmployeesCount} empleados` : `${employees.length} empleados`}
+              </b>
+            </span>
+            <span className="text-[10px] text-stone-400">| Tabla: flor_employees</span>
+          </div>
+        </div>
       </div>
 
       {/* Employees Grid */}
@@ -279,15 +378,21 @@ export const AdminEmployees: React.FC = () => {
                         <p className="text-xs text-stone-500">{emp.position}</p>
                       </div>
                     </div>
-                    <span
-                      className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider ${
-                        emp.active
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-stone-100 text-stone-500'
-                      }`}
-                    >
-                      {emp.active ? 'Activo' : 'Inactivo'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider ${
+                          emp.active
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-stone-100 text-stone-500'
+                        }`}
+                      >
+                        {emp.active ? 'Activo' : 'Inactivo'}
+                      </span>
+                      <span className="flex items-center gap-1 text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200">
+                        <Cloud className="w-2.5 h-2.5 text-emerald-600" />
+                        En Supabase
+                      </span>
+                    </div>
                   </div>
 
                   {/* Credentials capsule */}
@@ -581,9 +686,15 @@ export const AdminEmployees: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="py-2.5 px-5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-bold transition shadow-sm cursor-pointer"
+                  disabled={isSaving}
+                  className="py-2.5 px-5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-bold transition shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-2"
                 >
-                  {editingEmployee ? 'Guardar Cambios' : 'Crear Credenciales'}
+                  {isSaving && <Loader2 className="w-4 h-4 animate-spin text-[#C9B368]" />}
+                  {isSaving
+                    ? 'Guardando en Supabase...'
+                    : editingEmployee
+                    ? 'Guardar Cambios'
+                    : 'Crear Credenciales'}
                 </button>
               </div>
             </form>
@@ -732,13 +843,22 @@ export const AdminEmployees: React.FC = () => {
                   Cancelar
                 </button>
                 <button
-                  onClick={() => {
-                    deleteEmployee(employeeToDelete.id);
+                  disabled={isDeleting}
+                  onClick={async () => {
+                    setIsDeleting(true);
+                    const res = await deleteEmployee(employeeToDelete.id);
+                    setIsDeleting(false);
                     setEmployeeToDelete(null);
+                    setSyncBanner({
+                      type: res.success ? 'success' : 'warning',
+                      text: res.message,
+                    });
+                    setTimeout(() => setSyncBanner(null), 3500);
                   }}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  Sí, Eliminar
+                  {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {isDeleting ? 'Eliminando de Supabase...' : 'Sí, Eliminar'}
                 </button>
               </div>
             </div>
