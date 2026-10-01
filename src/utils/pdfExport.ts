@@ -1,32 +1,75 @@
 import jsPDF from 'jspdf';
 import { Order } from '../types';
 
-export const exportOrderPDF = (order: Order) => {
+let cachedLogoDataUrl: string | null = null;
+
+/**
+ * Loads and converts the official logo to a base64 DataURL for inclusion in jsPDF documents.
+ */
+export const loadLogoDataUrl = async (): Promise<string | null> => {
+  if (cachedLogoDataUrl) return cachedLogoDataUrl;
+  try {
+    const res = await fetch('https://appdesignproyectos.com/florlogo.png');
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        cachedLogoDataUrl = base64;
+        resolve(base64);
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn('Could not load logo for PDF:', e);
+    return null;
+  }
+};
+
+export const exportOrderPDF = async (order: Order) => {
   const doc = new jsPDF({
     unit: 'pt',
     format: 'a4',
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  
+  const logoData = await loadLogoDataUrl();
+
   // Header Background banner
   doc.setFillColor(27, 26, 24); // #1B1A18
-  doc.rect(0, 0, pageWidth, 90, 'F');
+  doc.rect(0, 0, pageWidth, 95, 'F');
 
   // Gold accent line
   doc.setFillColor(201, 179, 104); // #C9B368
-  doc.rect(0, 86, pageWidth, 4, 'F');
+  doc.rect(0, 91, pageWidth, 4, 'F');
+
+  // Place official logo
+  let textStartX = 40;
+  if (logoData) {
+    try {
+      doc.addImage(logoData, 'PNG', 40, 14, 66, 66);
+      textStartX = 118;
+    } catch (e) {
+      console.warn('Error rendering logo in PDF:', e);
+    }
+  }
 
   // Title & Brand
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
+  doc.setFontSize(17);
   doc.setFont('helvetica', 'bold');
-  doc.text('COMERCIALIZADORA FLOR DE LÍZ', 40, 42);
+  doc.text('COMERCIALIZADORA FLOR DE LIZ', textStartX, 38);
 
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(201, 179, 104);
-  doc.text('COMPROBANTE FORMAL DE PEDIDO / VENTA', 40, 60);
+  doc.text('SUMINISTROS MÉDICOS Y MATERIAL DE CURACIÓN', textStartX, 54);
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(215, 215, 215);
+  doc.text('COMPROBANTE FORMAL DE PEDIDO / COTIZACIÓN', textStartX, 69);
 
   doc.setFontSize(9);
   doc.setTextColor(200, 200, 200);
@@ -36,28 +79,28 @@ export const exportOrderPDF = (order: Order) => {
   // Client Details Box
   doc.setFillColor(250, 248, 245);
   doc.setDrawColor(220, 215, 200);
-  doc.roundedRect(40, 110, pageWidth - 80, 85, 6, 6, 'FD');
+  doc.roundedRect(40, 115, pageWidth - 80, 85, 6, 6, 'FD');
 
   doc.setTextColor(27, 26, 24);
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text('INFORMACIÓN DEL CLIENTE Y ENVÍO', 55, 130);
+  doc.text('INFORMACIÓN DEL CLIENTE Y ENVÍO', 55, 135);
 
   doc.setFontSize(9.5);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Cliente: ${order.clientName}`, 55, 148);
+  doc.text(`Cliente: ${order.clientName}`, 55, 153);
   if (order.clientBusiness) {
-    doc.text(`Negocio: ${order.clientBusiness}`, 55, 163);
+    doc.text(`Negocio: ${order.clientBusiness}`, 55, 168);
   }
-  doc.text(`Teléfono / WhatsApp: ${order.clientWhatsapp || order.clientPhone}`, 55, 178);
+  doc.text(`Teléfono / WhatsApp: ${order.clientWhatsapp || order.clientPhone}`, 55, 183);
 
   const rightColX = pageWidth / 2 + 10;
-  doc.text(`Dirección: ${order.clientAddress || 'No especificada'}`, rightColX, 148);
-  doc.text(`Atendido por: ${order.vendedorName || 'Venta Directa'}`, rightColX, 163);
-  doc.text(`Estado del Pedido: ${order.status.toUpperCase()}`, rightColX, 178);
+  doc.text(`Dirección: ${order.clientAddress || 'No especificada'}`, rightColX, 153);
+  doc.text(`Atendido por: ${order.vendedorName || 'Venta Directa'}`, rightColX, 168);
+  doc.text(`Estado del Pedido: ${order.status.toUpperCase()}`, rightColX, 183);
 
   // Items Table Header
-  let startY = 220;
+  let startY = 225;
   doc.setFillColor(27, 26, 24);
   doc.rect(40, startY, pageWidth - 80, 24, 'F');
 
@@ -143,35 +186,51 @@ export const exportOrderPDF = (order: Order) => {
   doc.setTextColor(201, 179, 104);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text('Comercializadora Flor de Líz • Calidad y Belleza Floral • WhatsApp: +52 1 55 1234 5678', pageWidth / 2, footerY + 12, { align: 'center' });
+  doc.text('Comercializadora Flor De Liz • Suministros Médicos y Material de Curación • WhatsApp: +52 1 55 1234 5678', pageWidth / 2, footerY + 12, { align: 'center' });
 
   doc.save(`Pedido_${order.orderNumber}_FlorDeLiz.pdf`);
 };
 
-export const exportSalesReportPDF = (orders: Order[], periodLabel = 'General') => {
+export const exportSalesReportPDF = async (orders: Order[], periodLabel = 'General') => {
   const doc = new jsPDF({
     unit: 'pt',
     format: 'a4',
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
+  const logoData = await loadLogoDataUrl();
 
   // Header Background banner
   doc.setFillColor(27, 26, 24);
-  doc.rect(0, 0, pageWidth, 85, 'F');
+  doc.rect(0, 0, pageWidth, 95, 'F');
   doc.setFillColor(201, 179, 104);
-  doc.rect(0, 81, pageWidth, 4, 'F');
+  doc.rect(0, 91, pageWidth, 4, 'F');
+
+  // Place official logo
+  let textStartX = 40;
+  if (logoData) {
+    try {
+      doc.addImage(logoData, 'PNG', 40, 14, 66, 66);
+      textStartX = 118;
+    } catch (e) {
+      console.warn('Error rendering logo in report PDF:', e);
+    }
+  }
 
   // Title
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(18);
+  doc.setFontSize(17);
   doc.setFont('helvetica', 'bold');
-  doc.text('REPORTE GENERAL DE VENTAS Y PEDIDOS', 40, 42);
+  doc.text('REPORTE GENERAL DE VENTAS Y PEDIDOS', textStartX, 38);
 
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(201, 179, 104);
-  doc.text(`COMERCIALIZADORA FLOR DE LÍZ • Período: ${periodLabel}`, 40, 60);
+  doc.text(`COMERCIALIZADORA FLOR DE LIZ • Período: ${periodLabel}`, textStartX, 54);
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(215, 215, 215);
+  doc.text('Suministros Médicos y Material de Curación', textStartX, 69);
 
   doc.setFontSize(8.5);
   doc.setTextColor(200, 200, 200);
@@ -185,17 +244,17 @@ export const exportSalesReportPDF = (orders: Order[], periodLabel = 'General') =
 
   doc.setFillColor(250, 248, 245);
   doc.setDrawColor(220, 215, 200);
-  doc.roundedRect(40, 100, pageWidth - 80, 50, 4, 4, 'FD');
+  doc.roundedRect(40, 110, pageWidth - 80, 50, 4, 4, 'FD');
 
   doc.setTextColor(27, 26, 24);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
-  doc.text(`Monto Total Facturado: $${totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`, 55, 122);
+  doc.text(`Monto Total Facturado: $${totalRevenue.toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`, 55, 132);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Pedidos Entregados: ${deliveredCount}  |  Pedidos en Proceso/Ruta: ${inProgressCount}  |  Total Pedidos: ${orders.length}`, 55, 138);
+  doc.text(`Pedidos Entregados: ${deliveredCount}  |  Pedidos en Proceso/Ruta: ${inProgressCount}  |  Total Pedidos: ${orders.length}`, 55, 148);
 
   // Table
-  let startY = 165;
+  let startY = 175;
   doc.setFillColor(27, 26, 24);
   doc.rect(40, startY, pageWidth - 80, 22, 'F');
 
@@ -246,7 +305,7 @@ export const exportSalesReportPDF = (orders: Order[], periodLabel = 'General') =
   doc.rect(0, footerY - 5, pageWidth, 35, 'F');
   doc.setTextColor(201, 179, 104);
   doc.setFontSize(8);
-  doc.text('Comercializadora Flor de Líz • Reporte Oficial Exportado', pageWidth / 2, footerY + 14, { align: 'center' });
+  doc.text('Comercializadora Flor De Liz • Reporte Oficial Exportado', pageWidth / 2, footerY + 14, { align: 'center' });
 
   doc.save(`Reporte_Ventas_FlorDeLiz_${periodLabel.replace(/\s+/g, '_')}.pdf`);
 };
@@ -255,7 +314,7 @@ export const createWhatsAppOrderLink = (order: Order, recipientPhone?: string) =
   const phone = recipientPhone || order.clientWhatsapp || order.clientPhone || '5215512345678';
   const cleanPhone = phone.replace(/\D/g, '');
 
-  let text = `🌸 *COMERCIALIZADORA FLOR DE LÍZ* 🌸\n`;
+  let text = `🌸 *COMERCIALIZADORA FLOR DE LIZ* 🌸\n`;
   text += `*Comprobante de Pedido #${order.orderNumber}*\n\n`;
   text += `Estimado(a) *${order.clientName}*,\n`;
   if (order.clientBusiness) {
@@ -275,7 +334,7 @@ export const createWhatsAppOrderLink = (order: Order, recipientPhone?: string) =
     text += `\nAhorro en descuentos: -$${order.discountTotal.toFixed(2)}`;
   }
   text += `\n*TOTAL A PAGAR: $${order.total.toFixed(2)} MXN*\n\n`;
-  text += `¡Gracias por tu preferencia! Cualquier consulta estamos a tus órdenes.`;
+  text += `¡Gracias por su preferencia! Suministros Médicos y Material de Curación.`;
 
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
 };
@@ -284,7 +343,7 @@ export const createWhatsAppEmployeeInviteLink = (employee: { name: string; email
   const cleanPhone = employee.phone.replace(/\D/g, '');
   const appUrl = window.location.origin;
 
-  let text = `🌸 *BIENVENIDO(A) A FLOR DE LÍZ* 🌸\n\n`;
+  let text = `🌸 *BIENVENIDO(A) A COMERCIALIZADORA FLOR DE LIZ* 🌸\n\n`;
   text += `Hola *${employee.name}*, te compartimos tus credenciales para acceder a la plataforma como *${employee.role === 'admin' ? 'Administrador' : 'Vendedor'}*:\n\n`;
   text += `🔗 *Link del sistema y catálogo:* ${appUrl}\n`;
   text += `👤 *Usuario / Correo:* ${employee.email}\n`;

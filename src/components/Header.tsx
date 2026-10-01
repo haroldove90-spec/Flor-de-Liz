@@ -76,17 +76,25 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Logo del sistema: 'no encapsules el logo, lo quiero ver de tamaño completo.' */}
+          {/* Logo del sistema y Título Institucional */}
           <div
             onClick={() => setActiveRole(null)}
-            className="flex items-center cursor-pointer group py-1"
-            title="Flor de Líz - Ir al inicio"
+            className="flex items-center gap-2 sm:gap-3 cursor-pointer group py-1 min-w-0"
+            title="Comercializadora Flor De Liz - Ir al inicio"
           >
             <img
               src="https://appdesignproyectos.com/florlogo.png"
-              alt="Comercializadora Flor de Líz"
-              className="h-9 sm:h-12 md:h-14 w-auto object-contain transition-transform duration-200 group-hover:scale-102"
+              alt="Comercializadora Flor De Liz"
+              className="h-8 sm:h-11 md:h-13 w-auto object-contain transition-transform duration-200 group-hover:scale-102 shrink-0"
             />
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs sm:text-base md:text-lg font-extrabold text-[#1B1A18] tracking-tight leading-tight truncate">
+                Comercializadora Flor De Liz
+              </span>
+              <span className="text-[10px] sm:text-[11px] text-stone-500 font-medium hidden md:inline truncate">
+                Suministros Médicos & Curación
+              </span>
+            </div>
           </div>
         </div>
 
@@ -94,10 +102,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-1.5 sm:gap-3">
           {/* Active Role Identifier */}
           <div
-            className={`px-2.5 py-1 text-xs sm:text-xs font-bold uppercase tracking-wider rounded-md border ${roleBadge.bg} hidden xs:inline-flex items-center gap-1.5 shadow-2xs`}
+            className={`px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded-md border ${roleBadge.bg} inline-flex items-center gap-1 sm:gap-1.5 shadow-2xs shrink-0`}
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[#C9B368] animate-pulse" />
-            {roleBadge.label}
+            <span>{roleBadge.label}</span>
           </div>
 
           {/* PWA Quick Install Button */}

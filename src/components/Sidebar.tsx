@@ -78,7 +78,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ];
       case 'cliente':
         return [
-          { id: 'catalogo', label: 'Catálogo Floral', icon: ShoppingBag, desc: 'Flores frescas y pedidos' },
+          { id: 'catalogo', label: 'Catálogo de Suministros', icon: ShoppingBag, desc: 'Material médico y pedidos' },
           { id: 'pedidos', label: 'Mis Pedidos', icon: Clock, desc: 'Estatus en ruta y anteriores' },
           { id: 'notificaciones', label: 'Notificaciones', icon: Bell, desc: 'Actualizaciones de tu pedido' },
           { id: 'perfil', label: 'Mis Datos Comerciales', icon: User, desc: 'Dirección de envío y contacto' },
@@ -116,11 +116,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center gap-3">
             <img
               src="https://appdesignproyectos.com/floricono.png"
-              alt="Flor de Líz"
+              alt="Comercializadora Flor De Liz"
               className="w-8 h-8 object-contain"
             />
             <div>
-              <p className="font-bold text-sm text-[#1B1A18] tracking-tight">Flor de Líz</p>
+              <p className="font-bold text-sm text-[#1B1A18] tracking-tight">Flor De Liz</p>
               <p className="text-[11px] text-stone-500 capitalize">{activeRole} Panel</p>
             </div>
           </div>
