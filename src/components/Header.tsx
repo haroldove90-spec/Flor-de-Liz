@@ -28,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   const {
     activeRole,
     setActiveRole,
+    setActiveTab,
     cartItemCount,
     notifications,
     markNotificationAsRead,
@@ -78,9 +79,9 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Logo del sistema y Título Institucional */}
           <div
-            onClick={() => setActiveRole(null)}
+            onClick={() => setActiveTab('catalogo')}
             className="flex items-center gap-2 sm:gap-3 cursor-pointer group py-1 min-w-0"
-            title="Comercializadora Flor De Liz - Ir al inicio"
+            title="Comercializadora Flor De Liz - Ir al Catálogo"
           >
             <img
               src="https://appdesignproyectos.com/florlogo.png"

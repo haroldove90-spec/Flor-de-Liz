@@ -31,7 +31,9 @@ interface AppContextType {
   products: Product[];
   addProduct: (product: Omit<Product, 'id' | 'createdAt'>) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
-  deleteProduct: (id: string) => Promise<void>;
+  deleteProduct: (id: string, code?: string) => Promise<{ success: boolean; message: string }>;
+  deleteMultipleProducts: (ids: string[], codes?: string[]) => Promise<{ success: boolean; count: number; message: string }>;
+  deleteAllProducts: () => Promise<{ success: boolean; count: number; message: string }>;
   importProductsList: (imported: Product[], syncCloud?: boolean) => Promise<{ success: boolean; count: number; message: string }>;
   importAnalyzedMedicalCatalog: (syncCloud?: boolean) => Promise<{ success: boolean; count: number; message: string }>;
 
@@ -265,30 +267,144 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return localStorage.getItem(STORAGE_KEYS.SAMPLE_CLEARED) === 'true';
   });
 
+  const VALID_ROLES: UserRole[] = ['admin', 'vendedor', 'cliente'];
+
+  // 1. Initial Role: Check URL hash first (#admin/catalogo), then localStorage, then sessionStorage
   const [activeRole, setActiveRoleState] = useState<UserRole | null>(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const cleanHash = window.location.hash.replace(/^#\/?/, '');
+      const roleFromHash = cleanHash.split('/')[0] as UserRole;
+      if (VALID_ROLES.includes(roleFromHash)) {
+        return roleFromHash;
+      }
+    }
     const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_ROLE);
-    return (saved as UserRole) || null;
+    if (saved && VALID_ROLES.includes(saved as UserRole)) {
+      return saved as UserRole;
+    }
+    try {
+      const sessionSaved = sessionStorage.getItem(STORAGE_KEYS.ACTIVE_ROLE);
+      if (sessionSaved && VALID_ROLES.includes(sessionSaved as UserRole)) {
+        return sessionSaved as UserRole;
+      }
+    } catch {
+      // sessionStorage restricted
+    }
+    return null;
   });
 
+  // 2. Initial Tab: Check URL hash (#admin/pedidos), then localStorage, then sessionStorage
   const [activeTab, setActiveTabState] = useState<string>(() => {
-    return localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB) || 'metricas';
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const parts = window.location.hash.replace(/^#\/?/, '').split('/');
+      if (parts.length > 1 && parts[1]) {
+        return parts[1];
+      }
+    }
+    const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB);
+    if (saved) return saved;
+    try {
+      const sessionSaved = sessionStorage.getItem(STORAGE_KEYS.ACTIVE_TAB);
+      if (sessionSaved) return sessionSaved;
+    } catch {
+      // sessionStorage restricted
+    }
+    return 'catalogo';
   });
+
+  // Keep URL hash and storage perfectly synchronized whenever activeRole or activeTab changes
+  useEffect(() => {
+    if (activeRole) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, activeRole);
+      try {
+        sessionStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, activeRole);
+      } catch {}
+
+      if (activeTab) {
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, activeTab);
+        try {
+          sessionStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, activeTab);
+        } catch {}
+      }
+
+      const targetHash = `#${activeRole}/${activeTab || 'catalogo'}`;
+      if (typeof window !== 'undefined' && window.location.hash !== targetHash) {
+        window.history.replaceState(null, '', targetHash);
+      }
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_ROLE);
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_TAB);
+      try {
+        sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_ROLE);
+        sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_TAB);
+      } catch {}
+      if (typeof window !== 'undefined' && window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }
+  }, [activeRole, activeTab]);
+
+  // Listen to hash changes (browser back/forward or direct navigation)
+  useEffect(() => {
+    const handleHashChange = () => {
+      if (typeof window === 'undefined' || !window.location.hash) return;
+      const clean = window.location.hash.replace(/^#\/?/, '');
+      const [rolePart, tabPart] = clean.split('/');
+      if (VALID_ROLES.includes(rolePart as UserRole)) {
+        if (rolePart !== activeRole) {
+          setActiveRoleState(rolePart as UserRole);
+        }
+        if (tabPart && tabPart !== activeTab) {
+          setActiveTabState(tabPart);
+        }
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [activeRole, activeTab]);
 
   const setActiveRole = (role: UserRole | null) => {
     setActiveRoleState(role);
     if (role) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, role);
-      if (role === 'admin') setActiveTabState('catalogo');
-      else if (role === 'vendedor') setActiveTabState('catalogo');
-      else if (role === 'cliente') setActiveTabState('catalogo');
+      try {
+        sessionStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, role);
+      } catch {}
+
+      // Keep user in current tab if already set, otherwise default to catalogo
+      const preservedTab = activeTab || localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB) || 'catalogo';
+      setActiveTabState(preservedTab);
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, preservedTab);
+      try {
+        sessionStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, preservedTab);
+      } catch {}
+
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', `#${role}/${preservedTab}`);
+      }
     } else {
+      // User explicitly clicked logout
       localStorage.removeItem(STORAGE_KEYS.ACTIVE_ROLE);
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_TAB);
+      try {
+        sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_ROLE);
+        sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_TAB);
+      } catch {}
+      if (typeof window !== 'undefined') {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
     }
   };
 
   const setActiveTab = (tab: string) => {
     setActiveTabState(tab);
     localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, tab);
+    try {
+      sessionStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, tab);
+    } catch {}
+    if (typeof window !== 'undefined' && activeRole) {
+      window.history.replaceState(null, '', `#${activeRole}/${tab}`);
+    }
   };
 
   // Profiles
@@ -493,22 +609,144 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const deleteProduct = async (id: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id));
+  const deleteProduct = async (
+    id: string,
+    code?: string
+  ): Promise<{ success: boolean; message: string }> => {
+    setProducts((prev) => prev.filter((p) => p.id !== id && (code ? p.code !== code : true)));
+    setCart((prev) => prev.filter((item) => item.product.id !== id));
 
     // Delete from Supabase
     try {
       const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
-      await fetch(`${cleanUrl}/flor_products?id=eq.${id}`, {
+      const filter = code
+        ? `or=(id.eq.${encodeURIComponent(id)},code.eq.${encodeURIComponent(code)})`
+        : `id=eq.${encodeURIComponent(id)}`;
+
+      const res = await fetch(`${cleanUrl}/flor_products?${filter}`, {
         method: 'DELETE',
         headers: {
           apikey: supabaseConfig.anonKey,
           Authorization: `Bearer ${supabaseConfig.anonKey}`,
         },
       });
+
       setSupabaseProductsCount((prev) => (prev !== null ? Math.max(0, prev - 1) : null));
-    } catch (err) {
-      console.warn('Background sync deleteProduct failed:', err);
+      return {
+        success: res.ok,
+        message: res.ok
+          ? 'Producto eliminado exitosamente de Supabase y del catálogo.'
+          : `Producto eliminado localmente. Supabase respondió código ${res.status}.`,
+      };
+    } catch (err: unknown) {
+      console.warn('deleteProduct Supabase error:', err);
+      const msg = err instanceof Error ? err.message : 'Error de red';
+      return { success: false, message: `Producto eliminado localmente. Error en Supabase: ${msg}` };
+    }
+  };
+
+  // Delete multiple selected products
+  const deleteMultipleProducts = async (
+    ids: string[],
+    codes?: string[]
+  ): Promise<{ success: boolean; count: number; message: string }> => {
+    if (ids.length === 0) {
+      return { success: false, count: 0, message: 'No se seleccionaron productos para eliminar.' };
+    }
+
+    const idSet = new Set(ids);
+    const codeSet = new Set(codes || []);
+
+    setProducts((prev) => prev.filter((p) => !idSet.has(p.id) && !codeSet.has(p.code)));
+    setCart((prev) => prev.filter((item) => !idSet.has(item.product.id)));
+
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const chunkSize = 40;
+
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        const encodedIds = chunk.map((id) => encodeURIComponent(id)).join(',');
+
+        await fetch(`${cleanUrl}/flor_products?id=in.(${encodedIds})`, {
+          method: 'DELETE',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          },
+        });
+
+        if (codes && codes.length > 0) {
+          const codeChunk = codes.slice(i, i + chunkSize);
+          const encodedCodes = codeChunk.map((c) => encodeURIComponent(c)).join(',');
+          await fetch(`${cleanUrl}/flor_products?code=in.(${encodedCodes})`, {
+            method: 'DELETE',
+            headers: {
+              apikey: supabaseConfig.anonKey,
+              Authorization: `Bearer ${supabaseConfig.anonKey}`,
+            },
+          });
+        }
+      }
+
+      setSupabaseProductsCount((prev) => (prev !== null ? Math.max(0, prev - ids.length) : null));
+      return {
+        success: true,
+        count: ids.length,
+        message: `Se eliminaron ${ids.length} productos de Supabase y del catálogo.`,
+      };
+    } catch (err: unknown) {
+      console.warn('deleteMultipleProducts failed:', err);
+      const msg = err instanceof Error ? err.message : 'Error';
+      return {
+        success: false,
+        count: ids.length,
+        message: `Eliminados del catálogo local. Error en Supabase: ${msg}`,
+      };
+    }
+  };
+
+  // Delete all products globally from Supabase and local state
+  const deleteAllProducts = async (): Promise<{ success: boolean; count: number; message: string }> => {
+    const totalCount = products.length;
+    setProducts([]);
+    setCart([]);
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, '[]');
+
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const res = await fetch(`${cleanUrl}/flor_products?id=neq.none`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          Prefer: 'return=minimal',
+        },
+      });
+
+      setSupabaseProductsCount(0);
+      addNotification({
+        title: 'Catálogo Vacíado en Supabase',
+        message: `Se eliminaron todos los productos (${totalCount} registros) permanentemente de la base de datos Supabase y del sistema.`,
+        type: 'system',
+        targetRole: 'admin',
+      });
+
+      return {
+        success: res.ok,
+        count: totalCount,
+        message: res.ok
+          ? `¡Se eliminaron exitosamente todos los ${totalCount} productos de Supabase y del catálogo!`
+          : `Catálogo local vaciado. Supabase status: ${res.status}`,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error desconocido';
+      setSupabaseProductsCount(0);
+      return {
+        success: false,
+        count: totalCount,
+        message: `Catálogo local vaciado. Error de conexión con Supabase: ${msg}`,
+      };
     }
   };
 
@@ -1075,6 +1313,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addProduct,
         updateProduct,
         deleteProduct,
+        deleteMultipleProducts,
+        deleteAllProducts,
         importProductsList,
         importAnalyzedMedicalCatalog,
         clients,

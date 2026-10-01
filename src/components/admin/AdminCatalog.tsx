@@ -18,6 +18,10 @@ import {
   CloudDownload,
   ClipboardPaste,
   Sparkles,
+  CheckSquare,
+  Square,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Product } from '../../types';
@@ -35,6 +39,8 @@ export const AdminCatalog: React.FC = () => {
     addProduct,
     updateProduct,
     deleteProduct,
+    deleteMultipleProducts,
+    deleteAllProducts,
     importProductsList,
     importAnalyzedMedicalCatalog,
     uploadProductsToSupabase,
@@ -67,6 +73,76 @@ export const AdminCatalog: React.FC = () => {
   // Status message
   const [importStatus, setImportStatus] = useState<{ text: string; isError?: boolean } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Deletion state (individual, selection, global)
+  const [deleteModal, setDeleteModal] = useState<{
+    type: 'single' | 'selected' | 'all';
+    product?: Product;
+    count?: number;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const handleToggleSelectProduct = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllVisible = () => {
+    setSelectedIds(filteredProducts.map((p) => p.id));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteModal) return;
+    setIsDeleting(true);
+
+    try {
+      if (deleteModal.type === 'single' && deleteModal.product) {
+        const prod = deleteModal.product;
+        const res = await deleteProduct(prod.id, prod.code);
+        setImportStatus({
+          text: res.message || `Producto "${prod.name}" eliminado de Supabase.`,
+          isError: !res.success,
+        });
+        if (showModal && editingProduct?.id === prod.id) {
+          setShowModal(false);
+          setEditingProduct(null);
+        }
+      } else if (deleteModal.type === 'selected') {
+        const toDeleteIds = [...selectedIds];
+        const toDeleteCodes = products
+          .filter((p) => toDeleteIds.includes(p.id))
+          .map((p) => p.code);
+        const res = await deleteMultipleProducts(toDeleteIds, toDeleteCodes);
+        setImportStatus({
+          text: res.message || `Se eliminaron ${toDeleteIds.length} productos de Supabase.`,
+          isError: !res.success,
+        });
+        setSelectedIds([]);
+        setIsSelectMode(false);
+      } else if (deleteModal.type === 'all') {
+        const res = await deleteAllProducts();
+        setImportStatus({
+          text: res.message || 'Se eliminaron todos los productos de Supabase y del catálogo.',
+          isError: !res.success,
+        });
+        setSelectedIds([]);
+        setIsSelectMode(false);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al eliminar';
+      setImportStatus({ text: `Error al eliminar de Supabase: ${msg}`, isError: true });
+    } finally {
+      setIsDeleting(false);
+      setDeleteModal(null);
+    }
+  };
 
   const medicalCategories = [
     'Agujas',
@@ -359,6 +435,38 @@ export const AdminCatalog: React.FC = () => {
             <span>Cargar de Supabase</span>
           </button>
 
+          {/* Delete All Catalog Button */}
+          {products.length > 0 && (
+            <button
+              onClick={() => setDeleteModal({ type: 'all', count: products.length })}
+              disabled={isSyncingCloud || isDeleting}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+              title="Borrar todos los productos permanentemente de Supabase y del catálogo"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span>Vaciar Catálogo</span>
+            </button>
+          )}
+
+          {/* Multi-selection Toggle */}
+          {products.length > 0 && (
+            <button
+              onClick={() => {
+                setIsSelectMode(!isSelectMode);
+                if (isSelectMode) setSelectedIds([]);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+                isSelectMode
+                  ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold'
+                  : 'bg-white border-stone-300 hover:bg-stone-50 text-stone-700'
+              }`}
+              title="Activar selección múltiple para borrar varios productos de Supabase"
+            >
+              <CheckSquare className="w-3.5 h-3.5 text-[#C9B368]" />
+              <span>{isSelectMode ? 'Cancelar Selección' : 'Seleccionar'}</span>
+            </button>
+          )}
+
           {/* New Single Product */}
           <button
             onClick={handleOpenNew}
@@ -369,6 +477,45 @@ export const AdminCatalog: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Multi-selection Action Bar */}
+      {isSelectMode && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex flex-wrap items-center justify-between gap-2 text-xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-amber-950">
+              {selectedIds.length} {selectedIds.length === 1 ? 'producto seleccionado' : 'productos seleccionados'}
+            </span>
+            <span className="text-amber-700">de {filteredProducts.length} productos visibles</span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleSelectAllVisible}
+              className="px-2.5 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-900 font-semibold hover:bg-amber-100 transition cursor-pointer"
+            >
+              Seleccionar Todos ({filteredProducts.length})
+            </button>
+            {selectedIds.length > 0 && (
+              <>
+                <button
+                  onClick={handleClearSelection}
+                  className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-300 text-stone-700 font-semibold hover:bg-stone-50 transition cursor-pointer"
+                >
+                  Deseleccionar
+                </button>
+                <button
+                  onClick={() => setDeleteModal({ type: 'selected', count: selectedIds.length })}
+                  disabled={isDeleting}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Eliminar Seleccionados ({selectedIds.length}) de Supabase</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
 
       {/* Import / Sync Status Banner */}
@@ -518,10 +665,19 @@ export const AdminCatalog: React.FC = () => {
             const hasDiscount = prod.discount > 0;
             const finalPrice = prod.price * (1 - (prod.discount || 0) / 100);
 
+            const isSelected = selectedIds.includes(prod.id);
+
             return (
               <div
                 key={prod.id}
-                className="bg-white rounded-2xl border border-stone-200/90 overflow-hidden shadow-2xs hover:shadow-md transition flex flex-col justify-between group"
+                onClick={() => {
+                  if (isSelectMode) handleToggleSelectProduct(prod.id);
+                }}
+                className={`bg-white rounded-2xl border overflow-hidden shadow-2xs hover:shadow-md transition flex flex-col justify-between group cursor-pointer sm:cursor-default ${
+                  isSelected
+                    ? 'border-[#C9B368] ring-2 ring-[#C9B368]/40 bg-amber-50/20'
+                    : 'border-stone-200/90'
+                }`}
               >
                 <div>
                   <div className="relative aspect-4/3 overflow-hidden bg-stone-100">
@@ -534,6 +690,27 @@ export const AdminCatalog: React.FC = () => {
                       <span className="absolute top-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] sm:text-[10px] font-bold shadow-xs">
                         -{prod.discount}%
                       </span>
+                    )}
+                    {isSelectMode && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleSelectProduct(prod.id);
+                        }}
+                        className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md backdrop-blur-xs flex items-center justify-center transition shadow-xs cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-white/90 text-stone-500 hover:text-stone-800'
+                        }`}
+                        title={isSelected ? 'Deseleccionar' : 'Seleccionar producto'}
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-4 h-4" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
                     )}
                     <span className="absolute bottom-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-[#1B1A18]/80 text-[#C9B368] text-[9px] sm:text-[10px] font-mono font-bold backdrop-blur-xs">
                       {prod.code}
@@ -569,20 +746,22 @@ export const AdminCatalog: React.FC = () => {
 
                 <div className="p-2 sm:p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center justify-end gap-1.5 sm:gap-2">
                   <button
-                    onClick={() => handleOpenEdit(prod)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenEdit(prod);
+                    }}
                     className="p-1 sm:p-1.5 rounded-lg border border-stone-200 hover:bg-stone-100 text-stone-600 transition cursor-pointer"
                     title="Editar producto"
                   >
                     <Edit2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`¿Eliminar producto "${prod.name}"?`)) {
-                        deleteProduct(prod.id);
-                      }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteModal({ type: 'single', product: prod });
                     }}
-                    className="p-1 sm:p-1.5 rounded-lg border border-stone-200 hover:bg-red-50 text-red-500 transition cursor-pointer"
-                    title="Eliminar producto"
+                    className="p-1 sm:p-1.5 rounded-lg border border-stone-200 hover:bg-rose-50 text-rose-500 hover:border-rose-300 transition cursor-pointer"
+                    title="Eliminar producto de Supabase y del catálogo"
                   >
                     <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </button>
@@ -804,22 +983,136 @@ export const AdminCatalog: React.FC = () => {
                 />
               </div>
 
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-stone-100">
+              <div className="pt-4 flex items-center justify-between border-t border-stone-100">
+                {editingProduct ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteModal({ type: 'single', product: editingProduct });
+                    }}
+                    className="py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold border border-rose-200 transition flex items-center gap-1.5 cursor-pointer text-xs"
+                    title="Eliminar este producto permanentemente de Supabase"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Eliminar de Supabase</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="py-2.5 px-4 rounded-xl border border-stone-200 text-stone-600 font-semibold hover:bg-stone-50 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="py-2.5 px-5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-bold transition shadow-sm cursor-pointer"
+                  >
+                    {editingProduct ? 'Guardar Cambios' : 'Registrar Producto'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal (Individual, Multi-selection or Global) */}
+      {deleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-stone-200 overflow-hidden text-[#1B1A18] animate-in zoom-in-95">
+            <div className="p-5 sm:p-6 bg-rose-50/80 border-b border-rose-100 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 shadow-xs">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-rose-950">
+                  {deleteModal.type === 'single'
+                    ? '¿Eliminar producto de Supabase?'
+                    : deleteModal.type === 'selected'
+                    ? `¿Eliminar ${deleteModal.count} productos de Supabase?`
+                    : '¿Vaciar TODO el Catálogo de Supabase?'}
+                </h3>
+                <p className="text-xs text-rose-700">
+                  {deleteModal.type === 'all'
+                    ? 'Esta acción eliminará todos los registros en la nube'
+                    : 'Se eliminará de la base de datos y de la aplicación'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 sm:p-6 space-y-4 text-xs">
+              {deleteModal.type === 'single' && deleteModal.product && (
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200 flex items-center gap-3">
+                  <img
+                    src={deleteModal.product.imageUrl}
+                    alt={deleteModal.product.name}
+                    className="w-12 h-12 object-cover rounded-xl bg-white border border-stone-200 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-[#1B1A18] truncate">{deleteModal.product.name}</p>
+                    <p className="text-[11px] text-stone-500 font-mono">Código SKU: {deleteModal.product.code}</p>
+                    <p className="text-[11px] text-stone-500">Precio: ${deleteModal.product.price.toFixed(2)} MXN</p>
+                  </div>
+                </div>
+              )}
+
+              {deleteModal.type === 'selected' && (
+                <p className="text-stone-600 leading-relaxed">
+                  Estás a punto de eliminar <span className="font-bold text-[#1B1A18]">{deleteModal.count} productos</span> seleccionados permanentemente tanto de la base de datos Supabase (<code className="font-mono bg-stone-100 px-1 py-0.5 rounded">flor_products</code>) como de la aplicación local.
+                </p>
+              )}
+
+              {deleteModal.type === 'all' && (
+                <div className="p-3.5 bg-red-50 rounded-2xl border border-red-200 text-red-950 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold text-red-900">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                    <span>¡Atención! Vaciado completo del catálogo</span>
+                  </div>
+                  <p className="text-[11px] text-red-800 leading-relaxed">
+                    Se borrarán los <span className="font-bold">{deleteModal.count} registros</span> de la tabla <code className="font-mono bg-red-100 px-1 py-0.5 rounded">flor_products</code> en el proyecto de Supabase <span className="font-semibold font-mono">ylzgfsvcibqsztarglja</span>. Esta operación no se puede deshacer.
+                  </p>
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="py-2.5 px-4 rounded-xl border border-stone-200 text-stone-600 font-semibold hover:bg-stone-50 cursor-pointer"
+                  disabled={isDeleting}
+                  onClick={() => setDeleteModal(null)}
+                  className="py-2.5 px-4 rounded-xl border border-stone-200 text-stone-600 font-semibold hover:bg-stone-50 cursor-pointer disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
-                  className="py-2.5 px-5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-bold transition shadow-sm cursor-pointer"
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleConfirmDelete}
+                  className="py-2.5 px-5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
-                  {editingProduct ? 'Guardar Cambios' : 'Registrar Producto'}
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Borrando de Supabase...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>
+                        {deleteModal.type === 'single'
+                          ? 'Eliminar de Supabase'
+                          : deleteModal.type === 'selected'
+                          ? `Eliminar (${deleteModal.count}) de Supabase`
+                          : 'Sí, Vaciar Todo'}
+                      </span>
+                    </>
+                  )}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
