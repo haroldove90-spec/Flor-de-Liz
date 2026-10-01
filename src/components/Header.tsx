@@ -41,10 +41,30 @@ export const Header: React.FC<HeaderProps> = ({
     isSampleDataCleared,
     restoreSampleData,
     currentUser,
+    adminProfile,
+    vendedorProfile,
+    clienteProfile,
     logout,
     canSwitchRoles,
     triggerTestNotification,
   } = useApp();
+
+  const displayName =
+    currentUser?.name ||
+    (activeRole === 'admin'
+      ? adminProfile.name
+      : activeRole === 'vendedor'
+      ? vendedorProfile.name
+      : clienteProfile.name) ||
+    'Usuario';
+
+  const userPhoto =
+    currentUser?.photoUrl ||
+    (activeRole === 'admin'
+      ? adminProfile.photoUrl
+      : activeRole === 'vendedor'
+      ? vendedorProfile.photoUrl
+      : clienteProfile.photoUrl);
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -195,7 +215,7 @@ export const Header: React.FC<HeaderProps> = ({
                         <div>
                           <div className="text-xs font-bold">Vista Cliente</div>
                           <div className={`text-[10px] ${activeRole === 'cliente' ? 'text-stone-300' : 'text-stone-400'}`}>
-                            Catálogo y compras WhatsApp
+                            Catálogo y pedidos en línea
                           </div>
                         </div>
                       </div>
@@ -361,6 +381,29 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* User Profile Capsule */}
+          <div
+            onClick={() => setActiveTab('perfil')}
+            className="hidden sm:flex items-center gap-2 pl-2 border-l border-stone-200 cursor-pointer hover:opacity-85 transition"
+            title={`Conectado como ${displayName} - Clic para ver Perfil`}
+          >
+            <div className="w-8 h-8 rounded-full overflow-hidden bg-[#1B1A18] text-[#C9B368] flex items-center justify-center font-bold text-xs border border-[#C9B368]/60 shadow-xs">
+              {userPhoto ? (
+                <img src={userPhoto} alt={displayName} className="w-full h-full object-cover" />
+              ) : (
+                <span>{displayName.charAt(0) || 'U'}</span>
+              )}
+            </div>
+            <div className="hidden lg:block text-left">
+              <p className="text-xs font-bold text-[#1B1A18] leading-tight truncate max-w-[130px]">
+                {displayName}
+              </p>
+              <p className="text-[10px] text-stone-500 capitalize">
+                {currentUser?.username ? `@${currentUser.username}` : activeRole}
+              </p>
+            </div>
           </div>
 
           {/* Logout Button */}

@@ -40,6 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     clearAllSampleData,
     restoreSampleData,
     supabaseConfig,
+    currentUser,
     logout,
   } = useApp();
 
@@ -57,6 +58,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const currentProfile = getProfile();
+  const displayName = currentUser?.name || currentProfile?.name || 'Usuario';
+  const userPhoto = currentUser?.photoUrl || currentProfile?.photoUrl || '';
+  const userSubtitle = currentUser?.username ? `@${currentUser.username}` : (currentProfile?.businessName || currentProfile?.email);
 
   const getMenuItems = () => {
     switch (activeRole) {
@@ -74,7 +78,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           { id: 'metricas', label: 'Métricas de Ventas', icon: BarChart3, desc: 'Ventas del día y del mes' },
           { id: 'catalogo', label: 'Catálogo & Carrito', icon: Package, desc: 'Productos y levantar pedidos' },
           { id: 'clientes', label: 'Registro de Clientes', icon: UserCheck, desc: 'Crear, editar y gestionar' },
-          { id: 'pedidos', label: 'Pedidos Realizados', icon: ShoppingCart, desc: 'Exportar PDF y WhatsApp' },
+          { id: 'pedidos', label: 'Pedidos Realizados', icon: ShoppingCart, desc: 'Exportar PDF y Comprobantes' },
           { id: 'notificaciones', label: 'Notificaciones', icon: Bell, desc: 'Avisos y pedidos asignados' },
           { id: 'perfil', label: 'Perfil de Vendedor', icon: User, desc: 'Datos personales y contacto' },
         ];
@@ -196,16 +200,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Bottom Profile & Actions */}
         <div className="p-4 border-t border-stone-100 bg-[#FAF8F5]/80 space-y-3">
           {/* User profile capsule */}
-          <div className="flex items-center gap-3 px-2 py-1.5">
-            <div className="w-9 h-9 rounded-full bg-[#1B1A18] text-[#C9B368] flex items-center justify-center font-bold text-xs uppercase shadow-xs">
-              {currentProfile?.name?.charAt(0) || 'F'}
+          <div
+            onClick={() => setActiveTab('perfil')}
+            className="flex items-center gap-3 px-2 py-1.5 rounded-xl hover:bg-stone-200/50 transition cursor-pointer"
+            title={`Perfil de ${displayName} - Clic para ver`}
+          >
+            <div className="w-9 h-9 rounded-full overflow-hidden bg-[#1B1A18] text-[#C9B368] flex items-center justify-center font-bold text-xs uppercase shadow-xs border border-[#C9B368]/50 shrink-0">
+              {userPhoto ? (
+                <img src={userPhoto} alt={displayName} className="w-full h-full object-cover" />
+              ) : (
+                <span>{displayName.charAt(0) || 'U'}</span>
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-bold text-[#1B1A18] truncate">
-                {currentProfile?.name || 'Usuario'}
+                {displayName}
               </p>
               <p className="text-[10px] text-stone-500 truncate">
-                {currentProfile?.businessName || currentProfile?.email}
+                {userSubtitle}
               </p>
             </div>
           </div>

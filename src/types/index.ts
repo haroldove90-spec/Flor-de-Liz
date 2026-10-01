@@ -105,18 +105,24 @@ export interface NotificationItem {
 export interface AuthUser {
   id: string;
   username: string;
+  password?: string;
   name: string;
   role: 'admin' | 'vendedor';
   isAdmin: boolean;
   email?: string;
   phone?: string;
+  whatsapp?: string;
   photoUrl?: string;
+  businessName?: string;
+  address?: string;
 }
 
 export interface UserProfile {
   id: string;
   role: UserRole;
   name: string;
+  username?: string;
+  password?: string;
   businessName?: string;
   email: string;
   phone: string;

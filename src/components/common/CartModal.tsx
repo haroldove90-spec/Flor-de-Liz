@@ -4,16 +4,16 @@ import {
   Plus,
   Minus,
   Trash2,
-  Send,
   FileText,
   ShoppingBag,
   CheckCircle2,
   User,
   MapPin,
   Phone,
+  MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { exportOrderPDF, createWhatsAppOrderLink } from '../../utils/pdfExport';
+import { exportOrderPDF } from '../../utils/pdfExport';
 import { Order } from '../../types';
 
 interface CartModalProps {
@@ -34,6 +34,8 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
     createOrder,
     clienteProfile,
     vendedorProfile,
+    adminProfile,
+    whatsappSupportNumber,
   } = useApp();
 
   // Vendedor order form state
@@ -50,7 +52,7 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const handleCheckout = () => {
+  const handleCheckout = (openWhatsApp: boolean = true) => {
     if (cart.length === 0) return;
 
     let targetClientId = '';
@@ -119,6 +121,10 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
     setCompletedOrder(order);
     clearCart();
 
+    if (openWhatsApp) {
+      handleSendWhatsApp(order);
+    }
+
     // Store order ID locally so client orders list always includes this purchase
     if (activeRole === 'cliente') {
       try {
@@ -127,14 +133,38 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
           localStorage.setItem('flor_my_client_order_ids', JSON.stringify([order.id, ...prev]));
         }
       } catch {}
-      const waLink = createWhatsAppOrderLink(order);
-      window.open(waLink, '_blank');
     }
   };
 
-  const handleShareWhatsApp = (order: Order) => {
-    const waLink = createWhatsAppOrderLink(order);
-    window.open(waLink, '_blank');
+  const handleSendWhatsApp = (order: Order) => {
+    const targetPhone = activeRole === 'cliente'
+      ? (whatsappSupportNumber || adminProfile.whatsapp || '5512345678')
+      : (order.clientWhatsapp || order.clientPhone || whatsappSupportNumber || adminProfile.whatsapp || '5512345678');
+    const cleanPhone = targetPhone.replace(/\D/g, '');
+
+    const itemsSummary = order.items
+      .map(
+        (i) => `• ${i.quantity}x ${i.productName} ($${i.subtotal.toFixed(2)})`
+      )
+      .join('\n');
+
+    const message = `🌸 *PEDIDO FLOR DE LIZ* 🌸\n` +
+      `*Folio:* #${order.orderNumber}\n` +
+      `*Cliente:* ${order.clientName}\n` +
+      (order.clientBusiness ? `*Negocio:* ${order.clientBusiness}\n` : '') +
+      `*Teléfono:* ${order.clientPhone}\n` +
+      `*Dirección:* ${order.clientAddress}\n\n` +
+      `*DETALLE DE PRODUCTOS:*\n${itemsSummary}\n\n` +
+      `*Subtotal:* $${order.subtotal.toFixed(2)} MXN\n` +
+      (order.discountTotal > 0 ? `*Descuento:* -$${order.discountTotal.toFixed(2)} MXN\n` : '') +
+      `*TOTAL:* $${order.total.toFixed(2)} MXN\n` +
+      `*Estatus inicial:* ${order.status}\n` +
+      (order.notes ? `*Notas:* ${order.notes}\n\n` : '\n') +
+      `_Enviado desde Comercializadora Flor De Liz_`;
+
+    const fullPhone = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone;
+    const waUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
   };
 
   return (
@@ -189,18 +219,20 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
               <button
-                onClick={() => handleShareWhatsApp(completedOrder)}
-                className="flex items-center justify-center gap-2 py-3 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-md transition cursor-pointer"
+                onClick={() => handleSendWhatsApp(completedOrder)}
+                className="flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition cursor-pointer"
+                title="Enviar detalle del pedido por WhatsApp"
               >
-                <Send className="w-4 h-4" />
-                Compartir por WhatsApp
+                <MessageCircle className="w-4 h-4" />
+                <span>Enviar Pedido por WhatsApp</span>
               </button>
+
               <button
                 onClick={() => exportOrderPDF(completedOrder)}
-                className="flex items-center justify-center gap-2 py-3 px-5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-semibold text-sm shadow-md transition cursor-pointer"
+                className="flex items-center justify-center gap-2 py-3 px-6 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-bold text-sm shadow-md transition cursor-pointer"
               >
                 <FileText className="w-4 h-4 text-[#C9B368]" />
-                Descargar Comprobante PDF
+                <span>Descargar PDF</span>
               </button>
             </div>
 
@@ -374,23 +406,21 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
                 </span>
               </div>
 
-              {activeRole === 'cliente' ? (
-                <button
-                  onClick={handleCheckout}
-                  className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Send className="w-4 h-4" />
-                  Realizar Pedido vía WhatsApp
-                </button>
-              ) : (
-                <button
-                  onClick={handleCheckout}
-                  className="w-full py-3.5 px-4 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-4 h-4 text-[#C9B368]" />
-                  Generar Pedido & Venta
-                </button>
-              )}
+              <button
+                onClick={() => handleCheckout(true)}
+                className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>Confirmar y Enviar Pedido por WhatsApp</span>
+              </button>
+
+              <button
+                onClick={() => handleCheckout(false)}
+                className="w-full py-2.5 px-4 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-stone-500" />
+                <span>Registrar en el Sistema sin abrir WhatsApp</span>
+              </button>
             </div>
           </div>
         )}

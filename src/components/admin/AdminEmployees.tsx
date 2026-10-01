@@ -24,10 +24,10 @@ import {
   CloudUpload,
   RefreshCw,
   Loader2,
+  MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Employee } from '../../types';
-import { createWhatsAppEmployeeInviteLink } from '../../utils/pdfExport';
 
 const SYSTEM_APP_URL = 'https://flor-de-liz-phi.vercel.app/';
 
@@ -194,19 +194,6 @@ export const AdminEmployees: React.FC = () => {
     }
   };
 
-  const handleShareWhatsApp = (emp: Employee) => {
-    const waLink = createWhatsAppEmployeeInviteLink({
-      name: emp.name,
-      email: emp.email,
-      username: emp.username,
-      password: emp.password,
-      accessCode: emp.accessCode,
-      phone: emp.whatsapp || emp.phone,
-      role: emp.role,
-    });
-    window.open(waLink, '_blank');
-  };
-
   const handleCopyCredentials = (emp: Employee) => {
     const user = emp.username || emp.email;
     const pass = emp.password || emp.accessCode || '';
@@ -214,6 +201,29 @@ export const AdminEmployees: React.FC = () => {
     navigator.clipboard.writeText(text);
     setCopiedId(emp.id);
     setTimeout(() => setCopiedId(null), 2500);
+  };
+
+  const handleShareWhatsApp = (emp: Employee) => {
+    const rawPhone = emp.whatsapp || emp.phone || '';
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const userLogin = emp.username || emp.email;
+    const passLogin = emp.password || emp.accessCode;
+
+    const message = `🌸 *CREDENCIALES OFICIALES - FLOR DE LIZ* 🌸\n\n` +
+      `¡Hola *${emp.name}*!\n` +
+      `Te compartimos tus credenciales privadas para ingresar a la plataforma de *Comercializadora Flor De Liz*:\n\n` +
+      `👤 *Usuario:* ${userLogin}\n` +
+      `🔑 *Contraseña:* ${passLogin}\n` +
+      `📋 *Puesto / Rol:* ${emp.position} (${emp.role === 'admin' ? 'Administrador' : 'Asesor Comercial'})\n` +
+      `🔐 *Código de Acceso:* ${emp.accessCode}\n` +
+      `🌐 *Enlace del Sistema:* ${SYSTEM_APP_URL}\n\n` +
+      `_Por tu seguridad, guarda esta información de forma confidencial._`;
+
+    const fullPhone = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone;
+    const waUrl = cleanPhone 
+      ? `https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
   };
 
   return (
@@ -462,31 +472,51 @@ export const AdminEmployees: React.FC = () => {
                 </div>
 
                 {/* Actions */}
-                <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
+                <div className="pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2">
                   <button
                     onClick={() => handleShareWhatsApp(emp)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
-                    title="Compartir link oficial y credenciales por WhatsApp"
+                    className="flex-1 min-w-[130px] flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+                    title="Compartir credenciales directamente al WhatsApp del empleado"
                   >
-                    <Send className="w-3.5 h-3.5" />
-                    Compartir WhatsApp
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>WhatsApp Empleado</span>
                   </button>
 
                   <button
-                    onClick={() => handleOpenEdit(emp)}
-                    className="p-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-600 cursor-pointer"
-                    title="Editar empleado"
+                    onClick={() => handleCopyCredentials(emp)}
+                    className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-[#C9B368] font-bold text-xs shadow-xs transition cursor-pointer"
+                    title="Copiar credenciales oficiales al portapapeles"
                   >
-                    <Edit2 className="w-3.5 h-3.5" />
+                    {copiedId === emp.id ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>¡Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copiar</span>
+                      </>
+                    )}
                   </button>
 
-                  <button
-                    onClick={() => setEmployeeToDelete(emp)}
-                    className="p-2 rounded-xl border border-stone-200 hover:bg-red-50 text-red-500 cursor-pointer"
-                    title="Eliminar empleado"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenEdit(emp)}
+                      className="p-2 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-600 cursor-pointer"
+                      title="Editar empleado"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => setEmployeeToDelete(emp)}
+                      className="p-2 rounded-xl border border-stone-200 hover:bg-red-50 text-red-500 cursor-pointer"
+                      title="Eliminar empleado"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -787,26 +817,18 @@ export const AdminEmployees: React.FC = () => {
               {/* Actions */}
               <div className="space-y-2 pt-1">
                 <button
-                  onClick={() => handleShareWhatsApp(sharedCredentialsModal)}
-                  className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>Enviar Directo por WhatsApp a {sharedCredentialsModal.whatsapp || sharedCredentialsModal.phone}</span>
-                </button>
-
-                <button
                   onClick={() => handleCopyCredentials(sharedCredentialsModal)}
-                  className="w-full py-2.5 px-4 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+                  className="w-full py-3 px-4 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-[#C9B368] font-bold flex items-center justify-center gap-2 shadow-md transition cursor-pointer"
                 >
                   {copiedId === sharedCredentialsModal.id ? (
                     <>
-                      <Check className="w-4 h-4 text-emerald-600" />
-                      <span className="text-emerald-700">¡Mensaje y Credenciales Copiados!</span>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span className="text-emerald-400">¡Credenciales Copiadas al Portapapeles!</span>
                     </>
                   ) : (
                     <>
                       <Copy className="w-4 h-4" />
-                      <span>Copiar Mensaje Completo para el Empleado</span>
+                      <span>Copiar Credenciales para Enviar al Empleado</span>
                     </>
                   )}
                 </button>

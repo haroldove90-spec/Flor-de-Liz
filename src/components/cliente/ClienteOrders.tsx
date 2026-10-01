@@ -5,17 +5,17 @@ import {
   Truck,
   CheckCircle,
   FileText,
-  Send,
   Eye,
   X,
   ChevronRight,
+  MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Order, OrderStatus } from '../../types';
-import { exportOrderPDF, createWhatsAppOrderLink } from '../../utils/pdfExport';
+import { exportOrderPDF } from '../../utils/pdfExport';
 
 export const ClienteOrders: React.FC = () => {
-  const { orders, clienteProfile } = useApp();
+  const { orders, clienteProfile, adminProfile, whatsappSupportNumber } = useApp();
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   // Retrieve locally placed order IDs for this client session
@@ -71,6 +71,20 @@ export const ClienteOrders: React.FC = () => {
     }
   };
 
+  const handleConsultWhatsApp = (order: Order) => {
+    const rawPhone = whatsappSupportNumber || adminProfile.whatsapp || '5512345678';
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const message = `🌸 *CONSULTA DE PEDIDO - FLOR DE LIZ* 🌸\n\n` +
+      `Hola, soy *${order.clientName}*.\n` +
+      `Quisiera consultar el estatus de mi pedido con folio *#${order.orderNumber}* ($${order.total.toFixed(2)} MXN).\n` +
+      `Estatus en plataforma: ${order.status}.\n` +
+      `¿Podrían confirmarme los detalles de entrega? ¡Muchas gracias!`;
+
+    const fullPhone = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone;
+    const waUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
+  };
+
   return (
     <div className="space-y-6 max-w-4xl">
       {/* Header */}
@@ -99,7 +113,7 @@ export const ClienteOrders: React.FC = () => {
               No tienes pedidos activos en este momento
             </p>
             <p className="text-xs text-stone-400 mt-0.5">
-              Tus nuevos pedidos solicitados por WhatsApp se mostrarán aquí con seguimiento en vivo.
+              Tus nuevos pedidos realizados se mostrarán aquí con seguimiento en vivo.
             </p>
           </div>
         ) : (
@@ -217,24 +231,22 @@ export const ClienteOrders: React.FC = () => {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center justify-end gap-2 pt-1">
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                  <button
+                    onClick={() => handleConsultWhatsApp(order)}
+                    className="py-2 px-3 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
+                    title="Consultar entrega por WhatsApp"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Consultar por WhatsApp</span>
+                  </button>
+
                   <button
                     onClick={() => exportOrderPDF(order)}
                     className="py-2 px-3 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-[#C9B368]" />
-                    Descargar Comprobante PDF
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      const wa = createWhatsAppOrderLink(order);
-                      window.open(wa, '_blank');
-                    }}
-                    className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    Consultar por WhatsApp
+                    <span>Descargar PDF</span>
                   </button>
                 </div>
               </div>

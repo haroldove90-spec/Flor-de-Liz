@@ -69,7 +69,7 @@ export const ClienteRegister: React.FC<ClienteRegisterProps> = ({ onCompleted })
           </div>
           <h2 className="text-base sm:text-lg font-bold text-white">Registro de Cliente</h2>
           <p className="text-xs text-[#C9B368] mt-1">
-            Completa tus datos para ver el catálogo y pedir fácilmente por WhatsApp
+            Completa tus datos para ver el catálogo y realizar tus pedidos en línea
           </p>
         </div>
 

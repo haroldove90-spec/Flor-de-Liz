@@ -97,7 +97,7 @@ export const RoleSelector: React.FC = () => {
               <span className="text-base sm:text-base font-bold text-[#1B1A18] tracking-wide group-hover:text-[#b59f54] transition block">
                 Cliente
               </span>
-              <span className="text-[11px] text-stone-400 sm:hidden">Catálogo y compras WhatsApp</span>
+              <span className="text-[11px] text-stone-400 sm:hidden">Catálogo y pedidos en línea</span>
             </div>
           </button>
         </div>

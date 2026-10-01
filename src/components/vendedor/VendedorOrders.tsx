@@ -3,7 +3,6 @@ import {
   ShoppingCart,
   Plus,
   FileText,
-  Send,
   Eye,
   Search,
   CheckCircle,
@@ -16,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Order, OrderStatus } from '../../types';
-import { exportOrderPDF, createWhatsAppOrderLink } from '../../utils/pdfExport';
+import { exportOrderPDF } from '../../utils/pdfExport';
 
 export const VendedorOrders: React.FC = () => {
   const {
@@ -163,7 +162,7 @@ export const VendedorOrders: React.FC = () => {
             Pedidos de Mis Clientes
           </h1>
           <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-            Levanta pedidos de clientes registrados o nuevos, exporta en PDF y comparte por WhatsApp
+            Levanta pedidos de clientes registrados o nuevos, genera comprobantes y exporta en PDF
           </p>
         </div>
 
@@ -198,7 +197,7 @@ export const VendedorOrders: React.FC = () => {
                 <th className="py-3.5 px-4">Cliente</th>
                 <th className="py-3.5 px-4">Total</th>
                 <th className="py-3.5 px-4">Estado</th>
-                <th className="py-3.5 px-4 text-right">Comprobante y WhatsApp</th>
+                <th className="py-3.5 px-4 text-right">Comprobante PDF</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
@@ -260,19 +259,6 @@ export const VendedorOrders: React.FC = () => {
                       >
                         <FileText className="w-3.5 h-3.5 text-[#C9B368]" />
                         <span>PDF</span>
-                      </button>
-
-                      {/* WhatsApp direct share */}
-                      <button
-                        onClick={() => {
-                          const wa = createWhatsAppOrderLink(order);
-                          window.open(wa, '_blank');
-                        }}
-                        className="py-1 px-2.5 rounded-lg border border-emerald-300 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer inline-flex items-center gap-1 shadow-2xs"
-                        title="Compartir pedido por WhatsApp"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>WhatsApp</span>
                       </button>
                     </td>
                   </tr>
@@ -516,16 +502,6 @@ export const VendedorOrders: React.FC = () => {
                 >
                   <FileText className="w-3.5 h-3.5 text-[#C9B368]" />
                   Descargar PDF
-                </button>
-                <button
-                  onClick={() => {
-                    const wa = createWhatsAppOrderLink(selectedOrder);
-                    window.open(wa, '_blank');
-                  }}
-                  className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  Compartir WhatsApp
                 </button>
               </div>
             </div>

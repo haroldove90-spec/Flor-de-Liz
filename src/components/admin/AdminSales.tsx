@@ -7,7 +7,6 @@ import {
   Filter,
   Eye,
   FileText,
-  Send,
   Trash2,
   Clock,
   Package,
@@ -16,10 +15,11 @@ import {
   XCircle,
   X,
   User,
+  MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Order, OrderStatus } from '../../types';
-import { exportOrderPDF, exportSalesReportPDF, createWhatsAppOrderLink } from '../../utils/pdfExport';
+import { exportOrderPDF, exportSalesReportPDF } from '../../utils/pdfExport';
 
 export const AdminSales: React.FC = () => {
   const {
@@ -131,6 +131,25 @@ export const AdminSales: React.FC = () => {
     setShowNewModal(false);
     setSaleNotes('');
     setSaleItems([{ productId: products[0]?.id || '', quantity: 1 }]);
+  };
+
+  const handleSendWhatsApp = (order: Order) => {
+    const rawPhone = order.clientWhatsapp || order.clientPhone || '';
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const itemsSummary = order.items.map((i) => `• ${i.quantity}x ${i.productName} ($${i.subtotal.toFixed(2)})`).join('\n');
+    const message = `🌸 *ESTATUS DE VENTA - FLOR DE LIZ* 🌸\n\n` +
+      `Estimado/a *${order.clientName}*,\n` +
+      `Te compartimos el estatus de tu pedido con folio *#${order.orderNumber}*:\n\n` +
+      `📋 *Estatus actual:* ${order.status}\n` +
+      `💰 *Total:* $${order.total.toFixed(2)} MXN\n\n` +
+      `*DETALLE:* \n${itemsSummary}\n\n` +
+      `Cualquier duda o aclaración, estamos a tus órdenes en Comercializadora Flor De Liz.`;
+
+    const fullPhone = cleanPhone.length === 10 ? `52${cleanPhone}` : cleanPhone;
+    const waUrl = cleanPhone 
+      ? `https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(waUrl, '_blank');
   };
 
   return (
@@ -286,22 +305,19 @@ export const AdminSales: React.FC = () => {
                       </button>
 
                       <button
+                        onClick={() => handleSendWhatsApp(order)}
+                        className="p-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition cursor-pointer"
+                        title="Enviar estatus por WhatsApp al cliente"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
                         onClick={() => exportOrderPDF(order)}
                         className="p-1.5 rounded-lg border border-stone-200 hover:bg-stone-100 text-stone-600 transition cursor-pointer"
                         title="Descargar Comprobante PDF"
                       >
                         <FileText className="w-3.5 h-3.5 text-[#C9B368]" />
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          const wa = createWhatsAppOrderLink(order);
-                          window.open(wa, '_blank');
-                        }}
-                        className="p-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition cursor-pointer"
-                        title="Enviar resumen por WhatsApp"
-                      >
-                        <Send className="w-3.5 h-3.5" />
                       </button>
 
                       <button
@@ -402,21 +418,19 @@ export const AdminSales: React.FC = () => {
               {/* Actions inside modal */}
               <div className="pt-2 flex items-center justify-end gap-2.5">
                 <button
+                  onClick={() => handleSendWhatsApp(selectedOrder)}
+                  className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>Enviar WhatsApp al Cliente</span>
+                </button>
+
+                <button
                   onClick={() => exportOrderPDF(selectedOrder)}
                   className="py-2.5 px-4 rounded-xl bg-[#1B1A18] text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <FileText className="w-3.5 h-3.5 text-[#C9B368]" />
                   Descargar PDF
-                </button>
-                <button
-                  onClick={() => {
-                    const wa = createWhatsAppOrderLink(selectedOrder);
-                    window.open(wa, '_blank');
-                  }}
-                  className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  Enviar WhatsApp
                 </button>
               </div>
             </div>

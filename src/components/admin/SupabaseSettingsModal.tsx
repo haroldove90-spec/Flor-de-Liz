@@ -56,7 +56,6 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({
 -- SCHEMA COMPLETO CORREGIDO PARA SUPABASE (POSTGRESQL)
 -- Comercializadora Flor De Liz: Suministros Médicos y Material de Curación
 -- Proyecto: ylzgfsvcibqsztarglja
--- Sonido WhatsApp: https://ylzgfsvcibqsztarglja.supabase.co/storage/v1/object/public/Notificaciones/WhatsApp%20Ptt%202026-09-29%20at%2020.31.23.ogg
 -- ==============================================================
 
 -- 1. TABLA DE PRODUCTOS (Suministros Médicos)
@@ -154,7 +153,7 @@ ALTER TABLE IF EXISTS flor_employees ADD COLUMN IF NOT EXISTS access_code TEXT;
 ALTER TABLE IF EXISTS flor_employees ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'vendedor';
 ALTER TABLE IF EXISTS flor_employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
 
--- 5. TABLA DE NOTIFICACIONES EN TIEMPO REAL (Módulos, roles y avisos flotantes con sonido)
+-- 5. TABLA DE NOTIFICACIONES EN TIEMPO REAL (Módulos, roles y avisos visuales flotantes)
 CREATE TABLE IF NOT EXISTS flor_notifications (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,

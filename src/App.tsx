@@ -7,7 +7,6 @@ import { Sidebar } from './components/Sidebar';
 import { CartModal } from './components/common/CartModal';
 import { SupabaseSettingsModal } from './components/admin/SupabaseSettingsModal';
 import { FloatingNotificationBanner } from './components/common/FloatingNotificationBanner';
-import { FloatingWhatsAppButton } from './components/common/FloatingWhatsAppButton';
 
 // Admin Views
 import { AdminMetrics } from './components/admin/AdminMetrics';
@@ -161,11 +160,8 @@ const MainLayout: React.FC = () => {
         onClose={() => setIsSupabaseModalOpen(false)}
       />
 
-      {/* Real-time Floating Notification Banner with WhatsApp audio */}
+      {/* Real-time Floating Notification Banner */}
       <FloatingNotificationBanner />
-
-      {/* Floating WhatsApp Executive Chat Button */}
-      <FloatingWhatsAppButton />
     </div>
   );
 };

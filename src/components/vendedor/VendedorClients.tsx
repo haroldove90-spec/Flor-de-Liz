@@ -6,7 +6,6 @@ import {
   Edit2,
   Trash2,
   Phone,
-  Send,
   Building,
   MapPin,
   Mail,
@@ -106,12 +105,6 @@ export const VendedorClients: React.FC = () => {
     setShowModal(false);
   };
 
-  const handleWhatsAppContact = (client: Client) => {
-    const phoneNum = (client.whatsapp || client.phone).replace(/\D/g, '');
-    const text = encodeURIComponent(`Hola ${client.name}, te saludo de Comercializadora Flor de Líz. ¿En qué podemos ayudarte el día de hoy?`);
-    window.open(`https://wa.me/${phoneNum}?text=${text}`, '_blank');
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -121,7 +114,7 @@ export const VendedorClients: React.FC = () => {
             Directorio de Clientes
           </h1>
           <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-            Registra nuevos clientes, edita datos de contacto, desactiva o envía mensajes por WhatsApp
+            Registra nuevos clientes, edita datos de contacto, gestiona pedidos y seguimiento comercial
           </p>
         </div>
 
@@ -216,16 +209,16 @@ export const VendedorClients: React.FC = () => {
                 </div>
               </div>
 
-              {/* Bottom Actions: WhatsApp, Edit, Delete */}
+              {/* Bottom Actions: Llamar, Edit, Delete */}
               <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
-                <button
-                  onClick={() => handleWhatsAppContact(client)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
-                  title="Contactar por WhatsApp"
+                <a
+                  href={`tel:${(client.phone || client.whatsapp || '').replace(/\D/g, '')}`}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-[#C9B368] font-bold text-xs shadow-xs transition cursor-pointer"
+                  title="Llamar al cliente"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  WhatsApp
-                </button>
+                  <Phone className="w-3.5 h-3.5" />
+                  Llamar
+                </a>
 
                 <button
                   onClick={() => handleOpenEdit(client)}

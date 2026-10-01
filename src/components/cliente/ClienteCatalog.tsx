@@ -219,7 +219,7 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
               </span>
             </div>
             <div className="text-left">
-              <p className="text-[10px] text-stone-300 uppercase tracking-wide">Comprar por WhatsApp</p>
+              <p className="text-[10px] text-[#C9B368] font-bold uppercase tracking-wide">Ver Carrito de Pedido</p>
               <p className="text-xs sm:text-sm font-bold text-white">${cartTotal.toFixed(2)} MXN</p>
             </div>
           </button>

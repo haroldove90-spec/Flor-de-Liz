@@ -209,7 +209,7 @@ const INITIAL_CLIENTS: Client[] = [
 const INITIAL_EMPLOYEES: Employee[] = [
   {
     id: 'emp_haroldo',
-    name: 'Haroldo Asesor Comercial',
+    name: 'Harold Anguiano',
     position: 'Asesor Comercial de Ventas',
     email: 'haroldo90@flordeliz.com',
     username: 'haroldo90',
@@ -272,11 +272,13 @@ const INITIAL_NOTIFICATIONS: NotificationItem[] = [
 ];
 
 const DEFAULT_ADMIN_PROFILE: UserProfile = {
-  id: 'user_admin_1',
+  id: 'user_emilio_admin',
   role: 'admin',
-  name: 'Dirección Comercial Flor de Líz',
+  name: 'Emilio Administrador',
+  username: 'emilio_admin',
+  password: 'Admin#1',
   businessName: 'Comercializadora Flor de Líz - Suministros Médicos y Material de Curación',
-  email: 'flordeliz@appdesignsoftware.com',
+  email: 'emilio_admin@flordeliz.com',
   phone: '5512345678',
   whatsapp: '5512345678',
   address: 'Insurgentes Sur 1450, Ciudad de México',
@@ -284,13 +286,15 @@ const DEFAULT_ADMIN_PROFILE: UserProfile = {
 };
 
 const DEFAULT_VENDEDOR_PROFILE: UserProfile = {
-  id: 'user_vendedor_1',
+  id: 'emp_haroldo',
   role: 'vendedor',
-  name: 'Rodrigo Morales Peña',
+  name: 'Harold Anguiano',
+  username: 'haroldo90',
+  password: 'Chevropar#1970',
   businessName: 'Flor de Líz - División Suministros Médicos',
-  email: 'rodrigo.ventas@flordeliz.com',
-  phone: '5545678901',
-  whatsapp: '5545678901',
+  email: 'haroldo90@flordeliz.com',
+  phone: '5578901234',
+  whatsapp: '5578901234',
   address: 'Sucursal Central, Ciudad de México',
   photoUrl: '',
 };
@@ -321,7 +325,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem(STORAGE_KEYS.AUTH_USER);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // If previous session had corrupted name ('Harold Anguiano' or placeholder) on admin, restore Emilio Administrador
+        if (parsed.role === 'admin') {
+          if (parsed.name === 'Harold Anguiano' || parsed.name === 'Dirección Comercial Flor de Líz' || !parsed.name) {
+            parsed.name = 'Emilio Administrador';
+            parsed.username = parsed.username || 'emilio_admin';
+            parsed.photoUrl = ''; // Harold's photo should NOT be on Emilio's profile!
+          }
+        } else if (parsed.role === 'vendedor' && (!parsed.name || parsed.name === 'Haroldo Asesor Comercial')) {
+          parsed.name = 'Harold Anguiano';
+          parsed.username = parsed.username || 'haroldo90';
+        }
+        return parsed;
       } catch {
         return null;
       }
@@ -482,25 +498,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const rawUser = (credentials.username || '').trim().toLowerCase();
     const rawPass = (credentials.password || '').trim();
 
-    // 1. Emilio Admin: emilio_admin / Admin#1
-    // Supports login with username AND/OR password
-    const matchesAdminUser = rawUser === 'emilio_admin';
-    const matchesAdminPass = rawPass === 'Admin#1';
+    // 1. Emilio Admin: dynamic credentials from adminProfile (defaults to emilio_admin / Admin#1)
+    const adminUserTarget = (adminProfile.username || 'emilio_admin').trim().toLowerCase();
+    const adminPassTarget = adminProfile.password || 'Admin#1';
+
+    const matchesAdminUser = rawUser === adminUserTarget || rawUser === 'emilio_admin';
+    const matchesAdminPass = rawPass === adminPassTarget || rawPass === 'Admin#1';
 
     if (
       (matchesAdminUser && matchesAdminPass) ||
       (matchesAdminUser && !rawPass) ||
       (matchesAdminPass && !rawUser) ||
-      (rawUser === 'admin#1') ||
-      (rawPass.toLowerCase() === 'emilio_admin')
+      (rawUser === adminPassTarget.toLowerCase() || rawUser === 'admin#1') ||
+      (rawPass.toLowerCase() === adminUserTarget || rawPass.toLowerCase() === 'emilio_admin')
     ) {
+      const adminDisplayName = adminProfile.name && adminProfile.name !== 'Harold Anguiano' ? adminProfile.name : 'Emilio Administrador';
       const adminUser: AuthUser = {
         id: 'user_emilio_admin',
-        username: 'emilio_admin',
-        name: 'Emilio Administrador',
+        username: adminProfile.username || 'emilio_admin',
+        password: adminProfile.password || 'Admin#1',
+        name: adminDisplayName,
         role: 'admin',
         isAdmin: true,
-        email: 'emilio_admin@flordeliz.com',
+        email: adminProfile.email || 'emilio_admin@flordeliz.com',
+        phone: adminProfile.phone || '5512345678',
+        whatsapp: adminProfile.whatsapp || '5512345678',
+        photoUrl: adminProfile.photoUrl || '',
       };
       setCurrentUser(adminUser);
       setActiveRoleState('admin');
@@ -509,36 +532,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, 'admin');
 
       addNotification({
-        title: '¡Bienvenido Administrador Emilio!',
+        title: `¡Bienvenido ${adminDisplayName}!`,
         message: 'Acceso autorizado con control total. Puedes navegar entre todos los roles desde el botón "Administración" en el Header.',
         type: 'system',
         targetRole: 'admin',
         module: 'sistema',
       });
 
-      return { success: true, message: 'Bienvenido, Emilio Administrador', user: adminUser };
+      return { success: true, message: `Bienvenido, ${adminDisplayName}`, user: adminUser };
     }
 
-    // 2. Haroldo Vendedor: haroldo90 / Chevropar#1970
-    // Supports login with username AND/OR password
-    const matchesHaroldoUser = rawUser === 'haroldo90';
-    const matchesHaroldoPass = rawPass === 'Chevropar#1970';
+    // 2. Harold Anguiano (Vendedor): dynamic credentials from vendedorProfile (defaults to haroldo90 / Chevropar#1970)
+    const vendedorUserTarget = (vendedorProfile.username || 'haroldo90').trim().toLowerCase();
+    const vendedorPassTarget = vendedorProfile.password || 'Chevropar#1970';
+
+    const matchesHaroldoUser = rawUser === vendedorUserTarget || rawUser === 'haroldo90' || rawUser === 'harold.anguiano';
+    const matchesHaroldoPass = rawPass === vendedorPassTarget || rawPass === 'Chevropar#1970';
 
     if (
       (matchesHaroldoUser && matchesHaroldoPass) ||
       (matchesHaroldoUser && !rawPass) ||
       (matchesHaroldoPass && !rawUser) ||
-      (rawUser === 'chevropar#1970') ||
-      (rawPass.toLowerCase() === 'haroldo90')
+      (rawUser === vendedorPassTarget.toLowerCase() || rawUser === 'chevropar#1970') ||
+      (rawPass.toLowerCase() === vendedorUserTarget || rawPass.toLowerCase() === 'haroldo90')
     ) {
+      const haroldoDisplayName = vendedorProfile.name || 'Harold Anguiano';
       const haroldoUser: AuthUser = {
         id: 'emp_haroldo',
-        username: 'haroldo90',
-        name: 'Haroldo Asesor Comercial',
+        username: vendedorProfile.username || 'haroldo90',
+        password: vendedorProfile.password || 'Chevropar#1970',
+        name: haroldoDisplayName,
         role: 'vendedor',
         isAdmin: false,
-        email: 'haroldo90@flordeliz.com',
-        phone: '5578901234',
+        email: vendedorProfile.email || 'haroldo90@flordeliz.com',
+        phone: vendedorProfile.phone || '5578901234',
+        whatsapp: vendedorProfile.whatsapp || '5578901234',
+        photoUrl: vendedorProfile.photoUrl || '',
       };
       setCurrentUser(haroldoUser);
       setActiveRoleState('vendedor');
@@ -548,19 +577,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setVendedorProfile((prev) => ({
         ...prev,
-        name: 'Haroldo Asesor Comercial',
-        email: 'haroldo90@flordeliz.com',
+        name: haroldoDisplayName,
+        email: haroldoUser.email || prev.email,
       }));
 
       addNotification({
-        title: '¡Bienvenido Asesor Haroldo!',
+        title: `¡Bienvenido Asesor ${haroldoDisplayName}!`,
         message: 'Acceso al módulo comercial de Vendedor. Gestiona clientes, pedidos y cotizaciones médicas.',
         type: 'system',
         targetRole: 'vendedor',
         module: 'sistema',
       });
 
-      return { success: true, message: 'Bienvenido, Haroldo', user: haroldoUser };
+      return { success: true, message: `Bienvenido, ${haroldoDisplayName}`, user: haroldoUser };
     }
 
     // 3. Check any registered employees in state or Supabase
@@ -647,12 +676,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Profiles
   const [adminProfile, setAdminProfile] = useState<UserProfile>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ADMIN_PROFILE);
-    return saved ? JSON.parse(saved) : DEFAULT_ADMIN_PROFILE;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // CRITICAL: Prevent Harold Anguiano or generic placeholder from corrupting Emilio's admin profile
+        if (parsed.name === 'Harold Anguiano' || parsed.name === 'Dirección Comercial Flor de Líz' || !parsed.name) {
+          parsed.name = 'Emilio Administrador';
+          parsed.username = parsed.username || 'emilio_admin';
+          parsed.password = parsed.password || 'Admin#1';
+          parsed.photoUrl = ''; // Clear Harold's photo from Emilio's profile!
+        }
+        return { ...DEFAULT_ADMIN_PROFILE, ...parsed };
+      } catch {}
+    }
+    return DEFAULT_ADMIN_PROFILE;
   });
 
   const [vendedorProfile, setVendedorProfile] = useState<UserProfile>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.VENDEDOR_PROFILE);
-    return saved ? JSON.parse(saved) : DEFAULT_VENDEDOR_PROFILE;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (!parsed.name || parsed.name === 'Rodrigo Morales Peña' || parsed.name === 'Haroldo Asesor Comercial') {
+          parsed.name = 'Harold Anguiano';
+          parsed.username = parsed.username || 'haroldo90';
+          parsed.password = parsed.password || 'Chevropar#1970';
+        }
+        return { ...DEFAULT_VENDEDOR_PROFILE, ...parsed };
+      } catch {}
+    }
+    return DEFAULT_VENDEDOR_PROFILE;
   });
 
   const [clienteProfile, setClienteProfile] = useState<UserProfile>(() => {
@@ -681,7 +734,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isSyncingEmployees, setIsSyncingEmployees] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
 
-  // Profile Save to Supabase: saves to flor_profiles (if exists) and flor_employees (guaranteed)
+  // Profile Save to Supabase: saves to flor_profiles and flor_employees with complete photo and credential isolation
   const saveProfileToSupabase = async (
     role: UserRole,
     profileData: Partial<UserProfile>
@@ -699,8 +752,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const profileId = role === 'admin' ? 'profile_admin' : 'profile_vendedor';
+      const employeeId = role === 'admin' ? 'user_emilio_admin' : 'emp_haroldo';
 
-      // 1. Try to upsert into flor_profiles (if user created the dedicated table)
+      // 1. Try to upsert into flor_profiles
       try {
         await fetch(`${cleanUrl}/flor_profiles`, {
           method: 'POST',
@@ -711,9 +766,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             Prefer: 'resolution=merge-duplicates',
           },
           body: JSON.stringify({
-            id: `profile_${role}`,
+            id: profileId,
             role,
             name: currentProfile.name,
+            username: currentProfile.username || (role === 'admin' ? 'emilio_admin' : 'haroldo90'),
+            password: currentProfile.password || (role === 'admin' ? 'Admin#1' : 'Chevropar#1970'),
             business_name: currentProfile.businessName || '',
             email: currentProfile.email,
             phone: currentProfile.phone || '',
@@ -726,8 +783,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // If flor_profiles table is not yet created, we continue to flor_employees
       }
 
-      // 2. Upsert into flor_employees (already provisioned and tested in Supabase)
-      // Stores photoUrl, address, businessName in access_code JSON
+      // 2. Upsert into flor_employees for role-specific profile row
       const meta = {
         photoUrl: currentProfile.photoUrl || '',
         address: currentProfile.address || '',
@@ -736,13 +792,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
 
       const employeePayload = {
-        id: `profile_${role}`,
-        name: currentProfile.name || (role === 'admin' ? 'Dirección General' : 'Vendedor'),
+        id: profileId,
+        name: currentProfile.name || (role === 'admin' ? 'Emilio Administrador' : 'Harold Anguiano'),
         position: currentProfile.businessName || (role === 'admin' ? 'Dirección General' : 'Asesor Comercial'),
         email: currentProfile.email || `${role}@flordelizmed.com`,
         phone: currentProfile.phone || '',
         whatsapp: currentProfile.whatsapp || '',
         access_code: JSON.stringify(meta),
+        photo_url: currentProfile.photoUrl || '',
+        username: currentProfile.username || (role === 'admin' ? 'emilio_admin' : 'haroldo90'),
+        password: currentProfile.password || (role === 'admin' ? 'Admin#1' : 'Chevropar#1970'),
         role: role === 'admin' ? 'admin' : 'vendedor',
         active: true,
         sales_count: 0,
@@ -760,8 +819,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         body: JSON.stringify(employeePayload),
       });
 
+      // Also upsert with actual user ID (user_emilio_admin / emp_haroldo)
+      try {
+        await fetch(`${cleanUrl}/flor_employees`, {
+          method: 'POST',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates',
+          },
+          body: JSON.stringify({
+            ...employeePayload,
+            id: employeeId,
+          }),
+        });
+      } catch {}
+
       if (res.ok || res.status === 201 || res.status === 200) {
-        return { success: true, message: '¡Datos y foto de perfil guardados en Supabase!' };
+        return { success: true, message: '¡Datos, credenciales y foto de perfil guardados en Supabase!' };
       } else {
         const errorText = await res.text();
         return { success: false, message: `Guardado en dispositivo local. Supabase: ${errorText}` };
@@ -781,10 +857,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       nextProfile = { ...adminProfile, ...update };
       setAdminProfile(nextProfile);
       localStorage.setItem(STORAGE_KEYS.ADMIN_PROFILE, JSON.stringify(nextProfile));
+
+      // Sync with currentUser if admin is active
+      if (currentUser?.role === 'admin') {
+        const updatedAuth: AuthUser = {
+          ...currentUser,
+          name: nextProfile.name || currentUser.name,
+          username: nextProfile.username || currentUser.username,
+          password: nextProfile.password || currentUser.password,
+          email: nextProfile.email || currentUser.email,
+          phone: nextProfile.phone || currentUser.phone,
+          whatsapp: nextProfile.whatsapp || currentUser.whatsapp,
+          photoUrl: nextProfile.photoUrl !== undefined ? nextProfile.photoUrl : currentUser.photoUrl,
+        };
+        setCurrentUser(updatedAuth);
+        localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(updatedAuth));
+      }
     } else if (role === 'vendedor') {
       nextProfile = { ...vendedorProfile, ...update };
       setVendedorProfile(nextProfile);
       localStorage.setItem(STORAGE_KEYS.VENDEDOR_PROFILE, JSON.stringify(nextProfile));
+
+      // Sync with currentUser if vendedor is active
+      if (currentUser?.role === 'vendedor') {
+        const updatedAuth: AuthUser = {
+          ...currentUser,
+          name: nextProfile.name || currentUser.name,
+          username: nextProfile.username || currentUser.username,
+          password: nextProfile.password || currentUser.password,
+          email: nextProfile.email || currentUser.email,
+          phone: nextProfile.phone || currentUser.phone,
+          whatsapp: nextProfile.whatsapp || currentUser.whatsapp,
+          photoUrl: nextProfile.photoUrl !== undefined ? nextProfile.photoUrl : currentUser.photoUrl,
+        };
+        setCurrentUser(updatedAuth);
+        localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(updatedAuth));
+      }
     } else {
       nextProfile = { ...clienteProfile, ...update };
       setClienteProfile(nextProfile);
@@ -814,6 +922,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               const r = String(p.role || '');
               const profileObj: Partial<UserProfile> = {
                 name: String(p.name || ''),
+                username: p.username ? String(p.username) : undefined,
+                password: p.password ? String(p.password) : undefined,
                 businessName: String(p.business_name || ''),
                 email: String(p.email || ''),
                 phone: String(p.phone || ''),
@@ -821,10 +931,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 address: String(p.address || ''),
                 photoUrl: String(p.photo_url || ''),
               };
-              if (r === 'admin') {
-                setAdminProfile((prev) => ({ ...prev, ...profileObj }));
-              } else if (r === 'vendedor') {
-                setVendedorProfile((prev) => ({ ...prev, ...profileObj }));
+              if (r === 'admin' || p.id === 'profile_admin') {
+                // Safeguard: Harold Anguiano's name and photo must NEVER overwrite Emilio's admin profile!
+                if (profileObj.name && profileObj.name.includes('Harold')) {
+                  profileObj.name = 'Emilio Administrador';
+                  profileObj.photoUrl = '';
+                }
+                setAdminProfile((prev) => {
+                  const merged = { ...prev, ...profileObj };
+                  localStorage.setItem(STORAGE_KEYS.ADMIN_PROFILE, JSON.stringify(merged));
+                  return merged;
+                });
+                if (currentUser?.role === 'admin') {
+                  setCurrentUser((prev) => {
+                    if (!prev) return prev;
+                    const updated = {
+                      ...prev,
+                      name: profileObj.name || prev.name,
+                      photoUrl: profileObj.photoUrl !== undefined ? profileObj.photoUrl : prev.photoUrl,
+                    };
+                    localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(updated));
+                    return updated;
+                  });
+                }
+              } else if (r === 'vendedor' || p.id === 'profile_vendedor') {
+                setVendedorProfile((prev) => {
+                  const merged = { ...prev, ...profileObj };
+                  localStorage.setItem(STORAGE_KEYS.VENDEDOR_PROFILE, JSON.stringify(merged));
+                  return merged;
+                });
+                if (currentUser?.role === 'vendedor') {
+                  setCurrentUser((prev) => {
+                    if (!prev) return prev;
+                    const updated = {
+                      ...prev,
+                      name: profileObj.name || prev.name,
+                      photoUrl: profileObj.photoUrl !== undefined ? profileObj.photoUrl : prev.photoUrl,
+                    };
+                    localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(updated));
+                    return updated;
+                  });
+                }
               }
             }
             return;
@@ -860,16 +1007,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
 
           if (row.id === 'profile_admin') {
+            const rawName = String(row.name || '');
+            const safeName = rawName.includes('Harold') ? 'Emilio Administrador' : (rawName || 'Emilio Administrador');
+            const safePhoto = rawName.includes('Harold') ? '' : photoUrl;
+
             setAdminProfile((prev) => {
               const next = {
                 ...prev,
-                name: String(row.name || prev.name),
+                name: safeName,
                 email: String(row.email || prev.email),
                 phone: String(row.phone || prev.phone),
                 whatsapp: String(row.whatsapp || prev.whatsapp),
                 businessName: businessName || prev.businessName,
                 address: address || prev.address,
-                photoUrl: photoUrl || prev.photoUrl,
+                photoUrl: safePhoto || prev.photoUrl,
               };
               localStorage.setItem(STORAGE_KEYS.ADMIN_PROFILE, JSON.stringify(next));
               return next;
@@ -878,7 +1029,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setVendedorProfile((prev) => {
               const next = {
                 ...prev,
-                name: String(row.name || prev.name),
+                name: String(row.name || 'Harold Anguiano'),
                 email: String(row.email || prev.email),
                 phone: String(row.phone || prev.phone),
                 whatsapp: String(row.whatsapp || prev.whatsapp),
@@ -1062,7 +1213,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const notif = data.notification as NotificationItem;
           setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
           setFloatingNotification(notif);
-          playNotificationSound().catch(() => {});
         }
       }
 
@@ -1086,7 +1236,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const notif = chosenNotif as NotificationItem;
           setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
           setFloatingNotification(notif);
-          playNotificationSound().catch(() => {});
         }
       }
 
@@ -1181,7 +1330,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
                     setNotifications((p) => [notif, ...p]);
                     setFloatingNotification(notif);
-                    playNotificationSound().catch(() => {});
                   }
                 } else {
                   // Brand new order detected from cloud
@@ -1221,7 +1369,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   next.unshift(newOrder);
                   knownOrderStatusesRef.current.set(cloudId, cloudStatus);
 
-                  // Trigger new sale alert with sound for admin
+                  // Trigger new sale alert for admin
                   const saleNotif: NotificationItem = {
                     id: `notif_sale_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
                     title: '¡Nueva Venta / Pedido Registrado!',
@@ -1236,7 +1384,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
                   setNotifications((p) => [saleNotif, ...p]);
                   setFloatingNotification(saleNotif);
-                  playNotificationSound().catch(() => {});
                 }
               }
 
@@ -1275,11 +1422,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
                 setNotifications((p) => [item, ...p.filter((n) => n.id !== item.id)]);
 
-                // If recently created (within last 45 seconds), pop up banner and sound
+                // If recently created (within last 45 seconds), pop up banner
                 const ageMs = Date.now() - new Date(item.createdAt).getTime();
                 if (ageMs < 45000) {
                   setFloatingNotification(item);
-                  playNotificationSound().catch(() => {});
                 }
               }
             }
@@ -1852,13 +1998,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setNotifications((prev) => [adminSaleNotif, clientOrderNotif, ...prev]);
 
-    // Show floating banner & sound according to active role
+    // Show floating banner according to active role
     if (activeRole === 'cliente') {
       setFloatingNotification(clientOrderNotif);
     } else {
       setFloatingNotification(adminSaleNotif);
     }
-    playNotificationSound().catch(() => {});
 
     // Broadcast in real-time across open windows and tabs
     broadcastRealtimeEvent({
@@ -1926,7 +2071,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setNotifications((prev) => [statusNotif, ...prev]);
       setFloatingNotification(statusNotif);
-      playNotificationSound().catch(() => {});
 
       // Broadcast immediately across all browser tabs & windows without reload
       broadcastRealtimeEvent({
@@ -2343,10 +2487,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setNotifications((prev) => [newNotif, ...prev]);
 
-    // 1. Play user-provided WhatsApp notification sound
-    playNotificationSound().catch(() => {});
-
-    // 2. Trigger floating notification banner
+    // Trigger floating notification banner
     setFloatingNotification(newNotif);
 
     // 3. Save notification to Supabase flor_notifications table
@@ -2393,7 +2534,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const triggerTestNotification = (role: UserRole = 'admin', moduleName = 'pedidos') => {
     addNotification({
       title: '¡Aviso en Tiempo Real Flor De Liz!',
-      message: `Notificación de prueba en tiempo real para el módulo "${moduleName}". Sonido WhatsApp activado.`,
+      message: `Notificación de prueba en tiempo real para el módulo "${moduleName}".`,
       type: 'order_created',
       targetRole: role,
       module: moduleName,
@@ -2513,13 +2654,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     try {
       const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
-      const response = await fetch(`${cleanUrl}/`, {
+      // PostgREST anon role accepts queries on public tables; querying '/' requires service_role
+      const response = await fetch(`${cleanUrl}/flor_products?limit=1`, {
         headers: {
           apikey: supabaseConfig.anonKey,
           Authorization: `Bearer ${supabaseConfig.anonKey}`,
         },
       });
-      if (response.ok || response.status === 200 || response.status === 404) {
+      if (response.ok || response.status === 200 || response.status === 206) {
         setSupabaseConfig((prev) => ({ ...prev, connected: true }));
         return { success: true, message: `¡Conexión verificada con éxito con el proyecto Supabase (${supabaseConfig.projectId || 'ylzgfsvcibqsztarglja'})!` };
       }

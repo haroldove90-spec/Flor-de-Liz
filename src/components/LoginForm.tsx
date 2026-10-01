@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { PWAInstallButton } from './PWAInstallButton';
-import { initNotificationAudio } from '../utils/audioPlayer';
 
 export const LoginForm: React.FC = () => {
   const { login } = useApp();
@@ -27,7 +26,6 @@ export const LoginForm: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    initNotificationAudio();
 
     if (!username.trim() && !password.trim()) {
       setError('Por favor ingresa tu nombre de usuario y/o contraseña.');
@@ -49,7 +47,6 @@ export const LoginForm: React.FC = () => {
     setUsername(userVal);
     setPassword(passVal);
     setError(null);
-    initNotificationAudio();
     login({ username: userVal, password: passVal });
   };
 
