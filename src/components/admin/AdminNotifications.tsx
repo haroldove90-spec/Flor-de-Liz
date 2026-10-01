@@ -6,12 +6,10 @@ import {
   Package,
   Truck,
   Check,
-  Volume2,
   Filter,
   Sparkles,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { playNotificationSound } from '../../utils/audioPlayer';
 
 export const AdminNotifications: React.FC = () => {
   const {
@@ -53,18 +51,6 @@ export const AdminNotifications: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Audio Test Button */}
-          <button
-            onClick={() => {
-              playNotificationSound();
-              triggerTestNotification('admin', 'pedidos');
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold transition cursor-pointer"
-            title="Probar sonido WhatsApp y disparar aviso emergente"
-          >
-            <Volume2 className="w-3.5 h-3.5" />
-            <span>Probar Sonido</span>
-          </button>
 
           {unreadCount > 0 && (
             <button

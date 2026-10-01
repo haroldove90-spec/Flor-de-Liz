@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   Bell,
-  Volume2,
   X,
   Package,
   Clock,
@@ -13,7 +12,6 @@ import {
   Info,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { playNotificationSound } from '../../utils/audioPlayer';
 
 export const FloatingNotificationBanner: React.FC = () => {
   const {
@@ -101,24 +99,14 @@ export const FloatingNotificationBanner: React.FC = () => {
       onMouseLeave={() => setIsPaused(false)}
       className="fixed top-4 sm:top-6 right-3 sm:right-6 z-50 max-w-sm sm:max-w-md w-[calc(100vw-1.5rem)] rounded-2xl bg-white/98 backdrop-blur-md border border-[#C9B368]/60 shadow-2xl p-4 transition-all duration-300 animate-in slide-in-from-top-4 sm:slide-in-from-right-4 ring-1 ring-black/5"
     >
-      {/* Top Banner Bar: Sound and Role Header */}
+      {/* Top Banner Bar: Role and Module Header */}
       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-stone-100">
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Audio Indicator with Replay Button */}
-          <button
-            onClick={() => playNotificationSound()}
-            title="Reproducir sonido de notificación de nuevo"
-            className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold hover:bg-emerald-100 transition cursor-pointer"
-          >
-            <Volume2 className="w-3.5 h-3.5 animate-bounce" />
-            <span>Sonido WhatsApp</span>
-          </button>
-
           {/* Role badge */}
           <span
-            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${roleInfo.color}`}
+            className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${roleInfo.color}`}
           >
-            <RoleIcon className="w-3 h-3" />
+            <RoleIcon className="w-3.5 h-3.5" />
             <span>{roleInfo.label}</span>
           </span>
 

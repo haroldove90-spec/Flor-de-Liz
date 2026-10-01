@@ -1,7 +1,6 @@
 import React from 'react';
-import { Bell, Truck, Package, Clock, CheckCircle2, Check, Sparkles, Volume2 } from 'lucide-react';
+import { Bell, Truck, Package, Clock, CheckCircle2, Check, Sparkles } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { playNotificationSound } from '../../utils/audioPlayer';
 
 export const VendedorNotifications: React.FC = () => {
   const { notifications, markNotificationAsRead, markAllNotificationsAsRead, vendedorProfile } = useApp();
@@ -25,15 +24,6 @@ export const VendedorNotifications: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => playNotificationSound()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold transition cursor-pointer"
-            title="Probar sonido WhatsApp de notificación"
-          >
-            <Volume2 className="w-3.5 h-3.5" />
-            <span>Probar Sonido</span>
-          </button>
-
           {unreadCount > 0 && (
             <button
               onClick={() => markAllNotificationsAsRead('vendedor')}

@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Briefcase,
   ShoppingBag,
-  Volume2,
   ArrowRight,
   Sparkles,
 } from 'lucide-react';
@@ -44,7 +43,6 @@ export const Header: React.FC<HeaderProps> = ({
     currentUser,
     logout,
     canSwitchRoles,
-    playNotificationSound,
     triggerTestNotification,
   } = useApp();
 
@@ -298,19 +296,6 @@ export const Header: React.FC<HeaderProps> = ({
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    {/* Audio sound test button as requested */}
-                    <button
-                      onClick={() => {
-                        playNotificationSound();
-                        triggerTestNotification(activeRole || 'admin', 'notificaciones');
-                      }}
-                      className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-lg border border-emerald-200 transition cursor-pointer"
-                      title="Probar sonido WhatsApp y ventana emergente"
-                    >
-                      <Volume2 className="w-3 h-3" />
-                      <span>Probar Sonido</span>
-                    </button>
-
                     {unreadCount > 0 && (
                       <button
                         onClick={() => markAllNotificationsAsRead(activeRole || undefined)}
