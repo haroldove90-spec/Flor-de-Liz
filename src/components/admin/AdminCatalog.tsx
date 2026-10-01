@@ -26,6 +26,7 @@ import {
   parseExcelProducts,
   parseRawMedicalPriceList,
   getPlaceholderImageForCategory,
+  exportProductsToExcel,
 } from '../../utils/excelImport';
 
 export const AdminCatalog: React.FC = () => {
@@ -39,6 +40,9 @@ export const AdminCatalog: React.FC = () => {
     uploadProductsToSupabase,
     fetchProductsFromSupabase,
     supabaseConfig,
+    supabaseProductsCount,
+    isSyncingCloud,
+    syncProgress,
   } = useApp();
 
   const [search, setSearch] = useState('');
@@ -180,77 +184,78 @@ export const AdminCatalog: React.FC = () => {
     setShowModal(false);
   };
 
-  // Upload Excel / CSV file from disk
+  // Upload Excel / CSV file from disk and automatically sync to Supabase
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
-      setImportStatus({ text: 'Analizando archivo Excel / CSV...' });
+      setImportStatus({ text: 'Analizando archivo Excel / CSV y guardando en Supabase...' });
       const imported = await parseExcelProducts(file);
       if (imported.length === 0) {
         setImportStatus({ text: 'No se detectaron registros válidos en el archivo.', isError: true });
         return;
       }
-      importProductsList(imported);
+      const res = await importProductsList(imported, true);
       setImportStatus({
-        text: `¡Se importaron con éxito ${imported.length} productos de suministros médicos y material de curación!`,
+        text: res.message || `¡Se importaron ${imported.length} productos y se guardaron en Supabase con éxito!`,
+        isError: !res.success,
       });
-      setTimeout(() => setImportStatus(null), 5000);
+      setTimeout(() => setImportStatus(null), 6000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al procesar archivo';
       setImportStatus({ text: `Error al importar: ${msg}`, isError: true });
     }
   };
 
-  // Parse pasted CSV text
-  const handleProcessPastedText = () => {
+  // Parse pasted CSV text and automatically sync to Supabase
+  const handleProcessPastedText = async () => {
     if (!pasteText.trim()) return;
     try {
+      setImportStatus({ text: 'Procesando lista y guardando en Supabase...' });
       const parsed = parseRawMedicalPriceList(pasteText);
       if (parsed.length === 0) {
         setImportStatus({ text: 'No se encontraron registros válidos en el texto pegado.', isError: true });
         return;
       }
-      importProductsList(parsed);
+      const res = await importProductsList(parsed, true);
       setShowPasteModal(false);
       setPasteText('');
       setImportStatus({
-        text: `¡Se procesaron e importaron ${parsed.length} productos desde la lista de precios pegada!`,
+        text: res.message || `¡Se procesaron ${parsed.length} productos y se guardaron en Supabase!`,
+        isError: !res.success,
       });
-      setTimeout(() => setImportStatus(null), 5000);
+      setTimeout(() => setImportStatus(null), 6000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error';
       setImportStatus({ text: `Error: ${msg}`, isError: true });
     }
   };
 
-  // Quick 1-click import of the analyzed price list
-  const handleImportAnalyzedList = () => {
-    const count = importAnalyzedMedicalCatalog();
+  // Quick 1-click import of the analyzed price list with auto-sync to Supabase
+  const handleImportAnalyzedList = async () => {
+    setImportStatus({ text: 'Cargando lista médica analizada y guardando en Supabase...' });
+    const res = await importAnalyzedMedicalCatalog(true);
     setImportStatus({
-      text: `¡Se importaron ${count} registros oficiales de suministros médicos y material de curación al catálogo!`,
+      text: res.message || `¡Catálogo analizado importado y guardado en Supabase!`,
+      isError: !res.success,
     });
-    setTimeout(() => setImportStatus(null), 5000);
+    setTimeout(() => setImportStatus(null), 6000);
   };
 
-  // Upload to Supabase cloud
+  // Upload to Supabase cloud manually
   const handleUploadToSupabase = async () => {
     if (products.length === 0) {
       alert('Primero importa o agrega productos al catálogo local antes de sincronizar con Supabase.');
       return;
     }
-    setIsSyncing(true);
     const res = await uploadProductsToSupabase();
-    setIsSyncing(false);
     setImportStatus({ text: res.message, isError: !res.success });
   };
 
   // Pull from Supabase cloud
   const handleFetchFromSupabase = async () => {
-    setIsSyncing(true);
     const res = await fetchProductsFromSupabase();
-    setIsSyncing(false);
     setImportStatus({ text: res.message, isError: !res.success });
   };
 
@@ -268,7 +273,7 @@ export const AdminCatalog: React.FC = () => {
             </span>
           </div>
           <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-            Importación directa de listas de precios (Excel/CSV) y sincronización con Supabase ({supabaseConfig.projectId})
+            Importación directa de listas de precios (Excel/CSV) y sincronización total con Supabase ({supabaseConfig.projectId})
           </p>
         </div>
 
@@ -277,11 +282,12 @@ export const AdminCatalog: React.FC = () => {
           {/* 1-Click Import Analyzed Price List */}
           <button
             onClick={handleImportAnalyzedList}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-950 text-xs font-bold transition cursor-pointer shadow-2xs"
-            title="Importar lista completa de suministros médicos analizada (300+ productos)"
+            disabled={isSyncingCloud}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-950 text-xs font-bold transition cursor-pointer shadow-2xs disabled:opacity-50"
+            title="Importar lista completa de suministros médicos analizada (570+ productos) directamente a Supabase"
           >
             <Sparkles className="w-3.5 h-3.5 text-[#C9B368]" />
-            <span>Importar Lista Analizada (320+)</span>
+            <span>Importar Lista Analizada (570+)</span>
           </button>
 
           {/* Import Excel File */}
@@ -296,6 +302,18 @@ export const AdminCatalog: React.FC = () => {
               className="hidden"
             />
           </label>
+
+          {/* Export to Excel */}
+          {products.length > 0 && (
+            <button
+              onClick={() => exportProductsToExcel(products)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-950 text-xs font-semibold transition cursor-pointer"
+              title="Exportar todos los productos actuales a archivo Excel (.xlsx)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-blue-700" />
+              <span>Exportar Excel ({products.length})</span>
+            </button>
+          )}
 
           {/* Paste CSV button */}
           <button
@@ -321,14 +339,25 @@ export const AdminCatalog: React.FC = () => {
           {products.length > 0 && (
             <button
               onClick={handleUploadToSupabase}
-              disabled={isSyncing}
+              disabled={isSyncingCloud}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer shadow-xs disabled:opacity-50"
-              title="Guardar catálogo actual en Supabase Cloud"
+              title="Guardar todos los registros directamente en Supabase Cloud"
             >
               <CloudUpload className="w-3.5 h-3.5" />
-              <span>{isSyncing ? 'Sincronizando...' : 'Subir a Supabase'}</span>
+              <span>{isSyncingCloud ? 'Guardando en Supabase...' : 'Guardar Todo en Supabase'}</span>
             </button>
           )}
+
+          {/* Pull from Supabase */}
+          <button
+            onClick={handleFetchFromSupabase}
+            disabled={isSyncingCloud}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-800 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+            title="Cargar registros actualizados desde la base de datos de Supabase"
+          >
+            <CloudDownload className="w-3.5 h-3.5 text-stone-600" />
+            <span>Cargar de Supabase</span>
+          </button>
 
           {/* New Single Product */}
           <button
@@ -340,6 +369,7 @@ export const AdminCatalog: React.FC = () => {
           </button>
         </div>
       </div>
+
 
       {/* Import / Sync Status Banner */}
       {importStatus && (
@@ -366,6 +396,49 @@ export const AdminCatalog: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* Cloud Sync Progress */}
+      {isSyncingCloud && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs space-y-2">
+          <div className="flex items-center justify-between font-bold text-amber-950">
+            <span className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
+              Sincronizando registros con Supabase...
+            </span>
+            {syncProgress && (
+              <span>
+                {syncProgress.current} / {syncProgress.total} productos
+              </span>
+            )}
+          </div>
+          {syncProgress && (
+            <div className="w-full h-2 bg-amber-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#C9B368] transition-all duration-300"
+                style={{ width: `${Math.round((syncProgress.current / Math.max(1, syncProgress.total)) * 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Supabase Status Summary Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-stone-100 border border-stone-200/80 text-[11px] text-stone-600">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="font-semibold text-stone-800">Supabase Cloud:</span>
+          <span className="font-mono text-stone-700">{supabaseConfig.projectId}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span>
+            En Nube: <b className="text-emerald-700">{supabaseProductsCount !== null ? `${supabaseProductsCount} registros` : `${products.length} registros`}</b>
+          </span>
+          <span className="text-stone-300">•</span>
+          <span>
+            Local: <b className="text-stone-800">{products.length} productos</b>
+          </span>
+        </div>
+      </div>
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -440,7 +513,7 @@ export const AdminCatalog: React.FC = () => {
           <p className="text-xs text-stone-400 mt-1">Prueba con otra palabra clave o selecciona "Todas las Categorías".</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
           {filteredProducts.map((prod) => {
             const hasDiscount = prod.discount > 0;
             const finalPrice = prod.price * (1 - (prod.discount || 0) / 100);
@@ -458,38 +531,35 @@ export const AdminCatalog: React.FC = () => {
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     {hasDiscount && (
-                      <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-red-600 text-white text-[10px] font-bold shadow-xs">
+                      <span className="absolute top-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] sm:text-[10px] font-bold shadow-xs">
                         -{prod.discount}%
                       </span>
                     )}
-                    <span className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-md bg-[#1B1A18]/80 text-[#C9B368] text-[10px] font-mono font-bold backdrop-blur-xs">
+                    <span className="absolute bottom-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-[#1B1A18]/80 text-[#C9B368] text-[9px] sm:text-[10px] font-mono font-bold backdrop-blur-xs">
                       {prod.code}
                     </span>
                   </div>
 
-                  <div className="p-4 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] text-stone-500">
-                      <span className="font-semibold text-stone-600 truncate max-w-[130px]">
+                  <div className="p-2.5 sm:p-4 space-y-1 sm:space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-stone-500">
+                      <span className="font-semibold text-stone-600 truncate max-w-[85px] sm:max-w-[130px]">
                         {prod.category}
                       </span>
                       <span className="text-stone-500 font-medium">
-                        Stock: {prod.stock} u.
+                        {prod.stock} disp.
                       </span>
                     </div>
 
                     <h3 className="text-xs sm:text-sm font-bold text-[#1B1A18] line-clamp-2 leading-tight">
                       {prod.name}
                     </h3>
-                    <p className="text-[11px] text-stone-500 line-clamp-2 leading-relaxed">
-                      {prod.description}
-                    </p>
 
-                    <div className="pt-2 flex items-baseline gap-2">
-                      <span className="text-base font-bold text-[#1B1A18]">
-                        ${finalPrice.toFixed(2)} MXN
+                    <div className="pt-1.5 sm:pt-2 flex items-baseline gap-1.5">
+                      <span className="text-xs sm:text-base font-bold text-[#1B1A18]">
+                        ${finalPrice.toFixed(2)}
                       </span>
                       {hasDiscount && (
-                        <span className="text-xs text-stone-400 line-through">
+                        <span className="text-[10px] sm:text-xs text-stone-400 line-through">
                           ${prod.price.toFixed(2)}
                         </span>
                       )}
@@ -497,13 +567,13 @@ export const AdminCatalog: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center justify-end gap-2">
+                <div className="p-2 sm:p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center justify-end gap-1.5 sm:gap-2">
                   <button
                     onClick={() => handleOpenEdit(prod)}
-                    className="p-1.5 rounded-lg border border-stone-200 hover:bg-stone-100 text-stone-600 transition cursor-pointer"
+                    className="p-1 sm:p-1.5 rounded-lg border border-stone-200 hover:bg-stone-100 text-stone-600 transition cursor-pointer"
                     title="Editar producto"
                   >
-                    <Edit2 className="w-3.5 h-3.5" />
+                    <Edit2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </button>
                   <button
                     onClick={() => {
@@ -511,10 +581,10 @@ export const AdminCatalog: React.FC = () => {
                         deleteProduct(prod.id);
                       }
                     }}
-                    className="p-1.5 rounded-lg border border-stone-200 hover:bg-red-50 text-red-500 transition cursor-pointer"
+                    className="p-1 sm:p-1.5 rounded-lg border border-stone-200 hover:bg-red-50 text-red-500 transition cursor-pointer"
                     title="Eliminar producto"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </button>
                 </div>
               </div>

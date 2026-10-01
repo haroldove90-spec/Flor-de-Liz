@@ -29,11 +29,16 @@ interface AppContextType {
 
   // Products
   products: Product[];
-  addProduct: (product: Omit<Product, 'id' | 'createdAt'>) => void;
-  updateProduct: (id: string, product: Partial<Product>) => void;
-  deleteProduct: (id: string) => void;
-  importProductsList: (imported: Product[]) => void;
-  importAnalyzedMedicalCatalog: () => number;
+  addProduct: (product: Omit<Product, 'id' | 'createdAt'>) => Promise<void>;
+  updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  importProductsList: (imported: Product[], syncCloud?: boolean) => Promise<{ success: boolean; count: number; message: string }>;
+  importAnalyzedMedicalCatalog: (syncCloud?: boolean) => Promise<{ success: boolean; count: number; message: string }>;
+
+  // Supabase Cloud Sync Status
+  supabaseProductsCount: number | null;
+  isSyncingCloud: boolean;
+  syncProgress: { current: number; total: number } | null;
 
   // Clients
   clients: Client[];
@@ -389,6 +394,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return DEFAULT_SUPABASE_CONFIG;
   });
 
+  // Supabase Cloud Sync Status
+  const [supabaseProductsCount, setSupabaseProductsCount] = useState<number | null>(null);
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+
   // Save changes to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
@@ -414,30 +424,116 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEYS.SUPABASE_CONFIG, JSON.stringify(supabaseConfig));
   }, [supabaseConfig]);
 
-  // Product Operations
-  const addProduct = (prod: Omit<Product, 'id' | 'createdAt'>) => {
+  // Product Operations with automatic Supabase sync
+  const addProduct = async (prod: Omit<Product, 'id' | 'createdAt'>) => {
     const newProd: Product = {
       ...prod,
       id: `prod_med_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       createdAt: new Date().toISOString(),
     };
     setProducts((prev) => [newProd, ...prev]);
+
+    // Save to Supabase
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify([{
+          id: newProd.id,
+          code: newProd.code,
+          name: newProd.name,
+          price: newProd.price,
+          stock: newProd.stock,
+          discount: newProd.discount,
+          description: newProd.description,
+          category: newProd.category,
+          image_url: newProd.imageUrl,
+          created_at: newProd.createdAt,
+        }]),
+      });
+      setSupabaseProductsCount((prev) => (prev !== null ? prev + 1 : 1));
+    } catch (err) {
+      console.warn('Background sync addProduct failed:', err);
+    }
   };
 
-  const updateProduct = (id: string, updated: Partial<Product>) => {
+  const updateProduct = async (id: string, updated: Partial<Product>) => {
     setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
+
+    // Patch to Supabase
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const payload: Record<string, unknown> = {};
+      if (updated.name !== undefined) payload.name = updated.name;
+      if (updated.code !== undefined) payload.code = updated.code;
+      if (updated.price !== undefined) payload.price = updated.price;
+      if (updated.stock !== undefined) payload.stock = updated.stock;
+      if (updated.discount !== undefined) payload.discount = updated.discount;
+      if (updated.description !== undefined) payload.description = updated.description;
+      if (updated.category !== undefined) payload.category = updated.category;
+      if (updated.imageUrl !== undefined) payload.image_url = updated.imageUrl;
+
+      await fetch(`${cleanUrl}/flor_products?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      console.warn('Background sync updateProduct failed:', err);
+    }
   };
 
-  const deleteProduct = (id: string) => {
+  const deleteProduct = async (id: string) => {
     setProducts((prev) => prev.filter((p) => p.id !== id));
+
+    // Delete from Supabase
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      await fetch(`${cleanUrl}/flor_products?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      setSupabaseProductsCount((prev) => (prev !== null ? Math.max(0, prev - 1) : null));
+    } catch (err) {
+      console.warn('Background sync deleteProduct failed:', err);
+    }
   };
 
-  const importProductsList = (imported: Product[]) => {
-    setProducts((prev) => [...imported, ...prev]);
+  const importProductsList = async (
+    imported: Product[],
+    syncCloud = true
+  ): Promise<{ success: boolean; count: number; message: string }> => {
+    let combinedList: Product[] = [];
+    setProducts((prev) => {
+      const existingIds = new Set(prev.map((p) => p.id));
+      const fresh = imported.filter((p) => !existingIds.has(p.id));
+      combinedList = [...fresh, ...prev];
+      return combinedList;
+    });
+
+    if (syncCloud) {
+      return await uploadProductsToSupabase(combinedList.length > 0 ? combinedList : imported);
+    }
+    return { success: true, count: imported.length, message: `Se importaron ${imported.length} productos localmente.` };
   };
 
-  // Import the analyzed 300+ medical supplies price list with one click
-  const importAnalyzedMedicalCatalog = (): number => {
+  // Import the analyzed medical supplies price list with automatic Supabase sync
+  const importAnalyzedMedicalCatalog = async (
+    syncCloud = true
+  ): Promise<{ success: boolean; count: number; message: string }> => {
     const parsed = parseRawMedicalPriceList(ANALYZED_MEDICAL_PRICE_LIST_CSV);
     if (parsed.length > 0) {
       setProducts(parsed);
@@ -447,9 +543,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: 'system',
         targetRole: 'admin',
       });
-      return parsed.length;
+
+      if (syncCloud) {
+        return await uploadProductsToSupabase(parsed);
+      }
+      return { success: true, count: parsed.length, message: `Se importaron ${parsed.length} productos localmente.` };
     }
-    return 0;
+    return { success: false, count: 0, message: 'No se encontraron productos para importar.' };
   };
 
   // Client Operations
@@ -745,59 +845,163 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Upload products to Supabase REST endpoint
-  const uploadProductsToSupabase = async (productsToUpload?: Product[]): Promise<{ success: boolean; count: number; message: string }> => {
+  // Automatically fetch products from Supabase on mount
+  useEffect(() => {
+    if (supabaseConfig.url && supabaseConfig.anonKey) {
+      fetchProductsFromSupabase();
+    }
+  }, []);
+
+  // Upload products to Supabase REST endpoint in safe chunks with on_conflict=code and fallback
+  const uploadProductsToSupabase = async (
+    productsToUpload?: Product[]
+  ): Promise<{ success: boolean; count: number; message: string }> => {
     const list = productsToUpload || products;
     if (list.length === 0) {
-      return { success: false, count: 0, message: 'No hay productos en el catálogo local para subir.' };
+      return { success: false, count: 0, message: 'No hay productos en el catálogo para guardar.' };
     }
 
+    setIsSyncingCloud(true);
     try {
       const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
-      const payload = list.map((p) => ({
-        id: p.id,
-        code: p.code,
-        name: p.name,
-        price: p.price,
-        stock: p.stock,
-        discount: p.discount,
-        description: p.description,
-        category: p.category,
-        image_url: p.imageUrl,
-        created_at: p.createdAt,
-      }));
+      const chunkSize = 50;
+      let totalSaved = 0;
 
-      const res = await fetch(`${cleanUrl}/flor_products`, {
-        method: 'POST',
+      // De-duplicate items by code before uploading to avoid duplicate key issues in the same batch
+      const seenCodes = new Set<string>();
+      const uniquePayload: Record<string, unknown>[] = [];
+
+      for (let idx = 0; idx < list.length; idx++) {
+        const p = list[idx];
+        let code = (p.code || '').trim();
+        if (!code || code === '-') {
+          code = `MED-${(idx + 1).toString().padStart(4, '0')}`;
+        }
+        if (seenCodes.has(code)) {
+          code = `${code}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+        }
+        seenCodes.add(code);
+
+        uniquePayload.push({
+          id: p.id || `prod_med_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 5)}`,
+          code,
+          name: p.name || 'Producto Médico',
+          price: isNaN(Number(p.price)) ? 0 : Number(p.price),
+          stock: isNaN(Number(p.stock)) ? 50 : Number(p.stock),
+          discount: isNaN(Number(p.discount)) ? 0 : Math.min(100, Math.max(0, Number(p.discount))),
+          description: p.description || 'Material de curación y suministros médicos.',
+          category: p.category || 'Suministros Médicos',
+          image_url: p.imageUrl || '',
+          created_at: p.createdAt || new Date().toISOString(),
+        });
+      }
+
+      setSyncProgress({ current: 0, total: uniquePayload.length });
+
+      // Upload in chunks of 50
+      for (let i = 0; i < uniquePayload.length; i += chunkSize) {
+        const chunk = uniquePayload.slice(i, i + chunkSize);
+
+        try {
+          const res = await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+            method: 'POST',
+            headers: {
+              apikey: supabaseConfig.anonKey,
+              Authorization: `Bearer ${supabaseConfig.anonKey}`,
+              'Content-Type': 'application/json',
+              Prefer: 'resolution=merge-duplicates',
+            },
+            body: JSON.stringify(chunk),
+          });
+
+          if (res.ok) {
+            totalSaved += chunk.length;
+          } else {
+            // If the bulk batch fails, fall back to individual upserts so no valid record is missed!
+            for (const singleItem of chunk) {
+              try {
+                const singleRes = await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+                  method: 'POST',
+                  headers: {
+                    apikey: supabaseConfig.anonKey,
+                    Authorization: `Bearer ${supabaseConfig.anonKey}`,
+                    'Content-Type': 'application/json',
+                    Prefer: 'resolution=merge-duplicates',
+                  },
+                  body: JSON.stringify([singleItem]),
+                });
+                if (singleRes.ok) {
+                  totalSaved++;
+                } else {
+                  // retry with id conflict resolution
+                  const retryRes = await fetch(`${cleanUrl}/flor_products?on_conflict=id`, {
+                    method: 'POST',
+                    headers: {
+                      apikey: supabaseConfig.anonKey,
+                      Authorization: `Bearer ${supabaseConfig.anonKey}`,
+                      'Content-Type': 'application/json',
+                      Prefer: 'resolution=merge-duplicates',
+                    },
+                    body: JSON.stringify([singleItem]),
+                  });
+                  if (retryRes.ok) totalSaved++;
+                }
+              } catch (e) {
+                console.warn('Could not save single item:', singleItem, e);
+              }
+            }
+          }
+        } catch (batchErr) {
+          console.error('Error uploading batch to Supabase:', batchErr);
+        }
+
+        setSyncProgress({ current: Math.min(uniquePayload.length, i + chunkSize), total: uniquePayload.length });
+      }
+
+      // Check verified count in Supabase
+      const countRes = await fetch(`${cleanUrl}/flor_products?select=id&limit=5000`, {
         headers: {
           apikey: supabaseConfig.anonKey,
           Authorization: `Bearer ${supabaseConfig.anonKey}`,
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates',
+          Range: '0-4999',
         },
-        body: JSON.stringify(payload),
       });
-
-      if (res.ok || res.status === 201) {
-        return { success: true, count: list.length, message: `¡${list.length} productos subidos exitosamente a Supabase!` };
-      } else {
-        const errorText = await res.text();
-        return { success: false, count: 0, message: `Supabase error (${res.status}): ${errorText}. Asegúrate de haber ejecutado el script SQL en Supabase para crear la tabla flor_products.` };
+      let verifiedCount = totalSaved;
+      if (countRes.ok) {
+        const ids = await countRes.json();
+        if (Array.isArray(ids)) {
+          verifiedCount = ids.length;
+          setSupabaseProductsCount(verifiedCount);
+        }
       }
+
+      setSupabaseConfig((prev) => ({ ...prev, connected: true }));
+      return {
+        success: totalSaved > 0,
+        count: totalSaved,
+        message: totalSaved > 0
+          ? `¡Se guardaron ${totalSaved} registros exitosamente en Supabase! (${verifiedCount} productos verificados en la nube)`
+          : 'No se pudieron guardar los registros. Revisa que el script SQL esté ejecutado en Supabase.',
+      };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error de red';
-      return { success: false, count: 0, message: `Error al subir productos: ${msg}` };
+      return { success: false, count: 0, message: `Error al guardar en Supabase: ${msg}` };
+    } finally {
+      setIsSyncingCloud(false);
+      setSyncProgress(null);
     }
   };
 
   // Fetch products from Supabase
   const fetchProductsFromSupabase = async (): Promise<{ success: boolean; count: number; message: string }> => {
     try {
+      setIsSyncingCloud(true);
       const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
-      const res = await fetch(`${cleanUrl}/flor_products?select=*`, {
+      const res = await fetch(`${cleanUrl}/flor_products?select=*&order=category.asc,name.asc&limit=5000`, {
         headers: {
           apikey: supabaseConfig.anonKey,
           Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          Range: '0-4999',
         },
       });
 
@@ -809,7 +1013,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             code: String(item.code || ''),
             name: String(item.name || ''),
             price: Number(item.price || 0),
-            stock: Number(item.stock || 0),
+            stock: Number(item.stock || 50),
             discount: Number(item.discount || 0),
             description: String(item.description || ''),
             category: String(item.category || 'General'),
@@ -817,8 +1021,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             createdAt: String(item.created_at || new Date().toISOString()),
           }));
           setProducts(mapped);
-          return { success: true, count: mapped.length, message: `Se cargaron ${mapped.length} productos desde Supabase.` };
+          setSupabaseProductsCount(mapped.length);
+          setSupabaseConfig((prev) => ({ ...prev, connected: true }));
+          return { success: true, count: mapped.length, message: `Se sincronizaron ${mapped.length} productos desde Supabase.` };
         }
+        setSupabaseProductsCount(0);
         return { success: true, count: 0, message: 'La tabla flor_products en Supabase está vacía.' };
       } else {
         const err = await res.text();
@@ -827,6 +1034,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error de red';
       return { success: false, count: 0, message: `Error: ${msg}` };
+    } finally {
+      setIsSyncingCloud(false);
     }
   };
 
@@ -841,6 +1050,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           Authorization: `Bearer ${supabaseConfig.anonKey}`,
         },
       });
+      setSupabaseProductsCount(0);
       clearAllSampleData();
       return { success: true, message: 'Registros de productos en Supabase y localmente eliminados.' };
     } catch (err: unknown) {
@@ -900,11 +1110,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         uploadProductsToSupabase,
         fetchProductsFromSupabase,
         clearSupabaseCloudRecords,
+        supabaseProductsCount,
+        isSyncingCloud,
+        syncProgress,
       }}
     >
       {children}
     </AppContext.Provider>
   );
+
 };
 
 export const useApp = () => {

@@ -128,14 +128,14 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
         </div>
       </div>
 
-      {/* Product Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+      {/* Product Cards: 2 Columns on Mobile, responsive on tablet/desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-4">
         {products.length === 0 ? (
           <div className="col-span-full py-16 text-center bg-white rounded-3xl border border-stone-200 p-8 space-y-2">
             <Package className="w-12 h-12 text-stone-300 mx-auto mb-2" />
             <p className="text-base font-bold text-stone-800">Catálogo en proceso de carga</p>
             <p className="text-xs text-stone-500 max-w-md mx-auto">
-              El administrador está sincronizando la lista de suministros médicos y material de curación.
+              El administrador está sincronizando la lista de suministros médicos y material de curación con Supabase.
             </p>
           </div>
         ) : filtered.length === 0 ? (
@@ -162,29 +162,34 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     {hasDiscount && (
-                      <span className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-md bg-red-600 text-white text-xs font-bold shadow-xs">
+                      <span className="absolute top-2 left-2 px-1.5 sm:px-2.5 py-0.5 rounded-md bg-red-600 text-white text-[9px] sm:text-xs font-bold shadow-xs">
                         -{prod.discount}%
                       </span>
                     )}
-                    <span className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-md bg-[#1B1A18]/80 text-[#C9B368] text-[10px] font-bold backdrop-blur-xs">
+                    <span className="absolute bottom-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-[#1B1A18]/80 text-[#C9B368] text-[9px] sm:text-[10px] font-bold backdrop-blur-xs truncate max-w-[85%]">
                       {prod.category}
                     </span>
                   </div>
 
-                  <div className="p-4 space-y-1.5">
+                  <div className="p-2.5 sm:p-4 space-y-1 sm:space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-stone-400">
+                      <span className="font-mono text-stone-500">{prod.code}</span>
+                      <span>Stock: {prod.stock}</span>
+                    </div>
+
                     <h3 className="text-xs sm:text-sm font-bold text-[#1B1A18] line-clamp-2 leading-tight">
                       {prod.name}
                     </h3>
-                    <p className="text-[11px] text-stone-500 line-clamp-2 leading-relaxed">
+                    <p className="text-[10px] sm:text-[11px] text-stone-500 line-clamp-1 sm:line-clamp-2 leading-relaxed">
                       {prod.description}
                     </p>
 
-                    <div className="pt-2 flex items-baseline gap-2">
-                      <span className="text-lg font-bold text-[#1B1A18]">
-                        ${finalPrice.toFixed(2)} MXN
+                    <div className="pt-1 sm:pt-2 flex items-baseline gap-1 sm:gap-2">
+                      <span className="text-xs sm:text-lg font-bold text-[#1B1A18]">
+                        ${finalPrice.toFixed(2)}
                       </span>
                       {hasDiscount && (
-                        <span className="text-xs text-stone-400 line-through">
+                        <span className="text-[10px] sm:text-xs text-stone-400 line-through">
                           ${prod.price.toFixed(2)}
                         </span>
                       )}
@@ -193,30 +198,32 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
                 </div>
 
                 {/* Actions: Add to cart & Direct WhatsApp order */}
-                <div className="p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center gap-2">
+                <div className="p-2 sm:p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center gap-1.5 sm:gap-2">
                   <button
                     onClick={() => handleAddToCart(prod)}
-                    className="flex-1 py-2 px-3 rounded-xl border border-stone-300 hover:border-[#1B1A18] hover:bg-stone-50 text-stone-800 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg sm:rounded-xl border border-stone-300 hover:border-[#1B1A18] hover:bg-stone-50 text-stone-800 text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
+                    title="Agregar al carrito"
                   >
                     {addedId === prod.id ? (
                       <>
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>En carrito</span>
+                        <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600" />
+                        <span className="hidden sm:inline">En carrito</span>
+                        <span className="sm:hidden">Listo</span>
                       </>
                     ) : (
                       <>
-                        <Plus className="w-3.5 h-3.5 text-[#C9B368]" />
-                        <span>Agregar</span>
+                        <Plus className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#C9B368]" />
+                        <span>Carrito</span>
                       </>
                     )}
                   </button>
 
                   <button
                     onClick={() => handleInstantWhatsAppBuy(prod)}
-                    className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                    className="flex-1 py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg sm:rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
                     title="Pedir este producto de inmediato por WhatsApp"
                   >
-                    <Send className="w-3.5 h-3.5" />
+                    <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                     <span>WhatsApp</span>
                   </button>
                 </div>

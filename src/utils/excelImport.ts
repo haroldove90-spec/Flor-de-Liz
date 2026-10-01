@@ -253,3 +253,35 @@ export const parseExcelProducts = async (file: File): Promise<Product[]> => {
     reader.readAsArrayBuffer(file);
   });
 };
+
+/**
+ * Export products to formatted Excel (.xlsx) file
+ */
+export const exportProductsToExcel = (products: Product[], filename?: string) => {
+  if (!products || products.length === 0) return;
+
+  const rows = products.map((p) => {
+    const discount = p.discount || 0;
+    const finalPrice = p.price * (1 - discount / 100);
+    return {
+      'Código / SKU': p.code,
+      'Nombre del Producto': p.name,
+      'Categoría': p.category || 'Suministros Médicos',
+      'Precio Lista ($ MXN)': Number(p.price.toFixed(2)),
+      'Descuento (%)': discount,
+      'Precio Final ($ MXN)': Number(finalPrice.toFixed(2)),
+      'Stock Disponible': p.stock,
+      'Descripción / Características': p.description,
+      'URL Imagen': p.imageUrl || '',
+      'Fecha Registro': p.createdAt ? new Date(p.createdAt).toLocaleDateString('es-MX') : '',
+    };
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Suministros_Medicos');
+  
+  const actualName = filename || `Catalogo_Productos_FlorDeLiz_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(workbook, actualName);
+};
+
