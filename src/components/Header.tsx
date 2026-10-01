@@ -9,10 +9,8 @@ import {
   Truck,
   Package,
   X,
-  Menu,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   onOpenCart?: () => void;
@@ -23,7 +21,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   onOpenCart,
   onOpenSupabaseModal,
-  onToggleSidebar,
 }) => {
   const {
     activeRole,
@@ -65,19 +62,8 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200/80 shadow-xs">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-4">
-        {/* Left: Menu toggle (desktop sidebar toggle or mobile menu) + Full Size Logo */}
-        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-          {onToggleSidebar && (
-            <button
-              onClick={onToggleSidebar}
-              className="p-2 -ml-1 text-stone-700 hover:text-[#1B1A18] hover:bg-stone-100 rounded-lg lg:hidden transition cursor-pointer"
-              title="Abrir menú de navegación"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-          )}
-
-          {/* Logo del sistema y Título Institucional */}
+        {/* Left: Full Size Institutional Logo & Title (Sin icono de hamburguesa en tablet/móvil) */}
+        <div className="flex items-center min-w-0">
           <div
             onClick={() => setActiveTab('catalogo')}
             className="flex items-center gap-2 sm:gap-3 cursor-pointer group py-1 min-w-0"
@@ -86,21 +72,21 @@ export const Header: React.FC<HeaderProps> = ({
             <img
               src="https://appdesignproyectos.com/florlogo.png"
               alt="Comercializadora Flor De Liz"
-              className="h-8 sm:h-11 md:h-13 w-auto object-contain transition-transform duration-200 group-hover:scale-102 shrink-0"
+              className="h-10 w-10 sm:h-12 sm:w-12 md:h-14 md:w-14 object-contain transition-transform duration-200 group-hover:scale-105 shrink-0 filter drop-shadow-2xs"
             />
-            <div className="flex flex-col min-w-0">
+            <div className="flex flex-col min-w-0 justify-center">
               <span className="text-xs sm:text-base md:text-lg font-extrabold text-[#1B1A18] tracking-tight leading-tight truncate">
                 Comercializadora Flor De Liz
               </span>
-              <span className="text-[10px] sm:text-[11px] text-stone-500 font-medium hidden md:inline truncate">
+              <span className="text-[10px] sm:text-[11px] text-stone-500 font-medium hidden sm:inline truncate">
                 Suministros Médicos & Curación
               </span>
             </div>
           </div>
         </div>
 
-        {/* Right Section: Active Role Badge, Quick PWA Install, Database Clear (admin), Notifications, Cart, Logout */}
-        <div className="flex items-center gap-1.5 sm:gap-3">
+        {/* Right Section: Active Role Badge, Database Clear (admin), Notifications, Cart, Logout */}
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {/* Active Role Identifier */}
           <div
             className={`px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded-md border ${roleBadge.bg} inline-flex items-center gap-1 sm:gap-1.5 shadow-2xs shrink-0`}
@@ -108,9 +94,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="w-1.5 h-1.5 rounded-full bg-[#C9B368] animate-pulse" />
             <span>{roleBadge.label}</span>
           </div>
-
-          {/* PWA Quick Install Button */}
-          <PWAInstallButton variant="header" />
 
           {/* Admin Database Sample Data Cleaner */}
           {activeRole === 'admin' && (

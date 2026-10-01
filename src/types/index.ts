@@ -68,6 +68,8 @@ export interface Employee {
   name: string;
   position: string;
   email: string;
+  username: string;
+  password?: string;
   phone: string;
   whatsapp: string;
   accessCode: string;

@@ -125,7 +125,6 @@ const MainLayout: React.FC = () => {
       <Header
         onOpenCart={() => setIsCartOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-        onToggleSidebar={() => setIsSidebarOpen(true)}
       />
 
       <div className="flex-1 flex max-w-7xl w-full mx-auto">

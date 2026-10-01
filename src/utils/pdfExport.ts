@@ -339,16 +339,26 @@ export const createWhatsAppOrderLink = (order: Order, recipientPhone?: string) =
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
 };
 
-export const createWhatsAppEmployeeInviteLink = (employee: { name: string; email: string; accessCode: string; phone: string; role: string }) => {
+export const createWhatsAppEmployeeInviteLink = (employee: {
+  name: string;
+  email: string;
+  username?: string;
+  password?: string;
+  accessCode?: string;
+  phone: string;
+  role: string;
+}) => {
   const cleanPhone = employee.phone.replace(/\D/g, '');
-  const appUrl = window.location.origin;
+  const appUrl = 'https://flor-de-liz-phi.vercel.app/';
+  const user = employee.username || employee.email;
+  const pass = employee.password || employee.accessCode || 'Flor2026$Med';
 
   let text = `🌸 *BIENVENIDO(A) A COMERCIALIZADORA FLOR DE LIZ* 🌸\n\n`;
-  text += `Hola *${employee.name}*, te compartimos tus credenciales para acceder a la plataforma como *${employee.role === 'admin' ? 'Administrador' : 'Vendedor'}*:\n\n`;
-  text += `🔗 *Link del sistema y catálogo:* ${appUrl}\n`;
-  text += `👤 *Usuario / Correo:* ${employee.email}\n`;
-  text += `🔑 *Código de acceso:* ${employee.accessCode}\n\n`;
-  text += `Por favor ingresa y actualiza tu perfil comercial. ¡Mucho éxito en tus ventas!`;
+  text += `Hola *${employee.name}*, te compartimos tus credenciales oficiales de acceso como *${employee.role === 'admin' ? 'Administrador' : 'Vendedor'}*:\n\n`;
+  text += `🌐 *Link del Sistema:* ${appUrl}\n`;
+  text += `👤 *Usuario:* ${user}\n`;
+  text += `🔐 *Contraseña:* ${pass}\n\n`;
+  text += `Por favor ingresa al enlace para acceder a tu catálogo comercial, cotizaciones y pedidos. ¡Mucho éxito en tus ventas!`;
 
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
 };
