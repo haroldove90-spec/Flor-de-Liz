@@ -9,8 +9,16 @@ import {
   Truck,
   Package,
   X,
+  ChevronDown,
+  ShieldCheck,
+  Briefcase,
+  ShoppingBag,
+  Volume2,
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { UserRole } from '../types';
 
 interface HeaderProps {
   onOpenCart?: () => void;
@@ -33,36 +41,51 @@ export const Header: React.FC<HeaderProps> = ({
     clearAllSampleData,
     isSampleDataCleared,
     restoreSampleData,
+    currentUser,
+    logout,
+    canSwitchRoles,
+    playNotificationSound,
+    triggerTestNotification,
   } = useApp();
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showRoleMenu, setShowRoleMenu] = useState(false);
 
   // Filter notifications relevant to current active role
   const roleNotifications = notifications.filter(
-    (n) => n.targetRole === activeRole || n.targetRole === 'admin' && activeRole === 'admin'
+    (n) => n.targetRole === activeRole || (n.targetRole === 'admin' && activeRole === 'admin')
   );
   const unreadCount = roleNotifications.filter((n) => !n.read).length;
+
+  const handleSwitchRole = (newRole: UserRole) => {
+    setActiveRole(newRole);
+    setShowRoleMenu(false);
+    if (newRole === 'admin') setActiveTab('metricas');
+    else if (newRole === 'vendedor') setActiveTab('metricas');
+    else if (newRole === 'cliente') setActiveTab('catalogo');
+  };
 
   const getRoleBadge = () => {
     switch (activeRole) {
       case 'admin':
-        return { label: 'Administrador', bg: 'bg-[#1B1A18] text-[#C9B368] border-[#C9B368]/30' };
+        return { label: 'Administración', bg: 'bg-[#1B1A18] text-[#C9B368] border-[#C9B368]/50', icon: ShieldCheck };
       case 'vendedor':
-        return { label: 'Vendedor', bg: 'bg-[#C9B368]/15 text-[#1B1A18] border-[#C9B368]/50' };
+        return { label: 'Vendedor', bg: 'bg-[#C9B368]/15 text-[#1B1A18] border-[#C9B368]/50', icon: Briefcase };
       case 'cliente':
-        return { label: 'Cliente', bg: 'bg-stone-100 text-stone-800 border-stone-300' };
+        return { label: 'Cliente', bg: 'bg-emerald-50 text-emerald-900 border-emerald-300', icon: ShoppingBag };
       default:
-        return { label: 'Usuario', bg: 'bg-stone-100 text-stone-700' };
+        return { label: 'Usuario', bg: 'bg-stone-100 text-stone-700 border-stone-200', icon: ShieldCheck };
     }
   };
 
   const roleBadge = getRoleBadge();
+  const RoleIcon = roleBadge.icon;
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200/80 shadow-xs">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-4">
-        {/* Left: Full Size Institutional Logo & Title (Sin icono de hamburguesa en tablet/móvil) */}
+        {/* Left: Full Size Institutional Logo & Title */}
         <div className="flex items-center min-w-0">
           <div
             onClick={() => setActiveTab('catalogo')}
@@ -85,15 +108,139 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right Section: Active Role Badge, Database Clear (admin), Notifications, Cart, Logout */}
+        {/* Right Section: Active Role Badge / Navigator, Cart, Notifications, Logout */}
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {/* Active Role Identifier */}
-          <div
-            className={`px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded-md border ${roleBadge.bg} inline-flex items-center gap-1 sm:gap-1.5 shadow-2xs shrink-0`}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#C9B368] animate-pulse" />
-            <span>{roleBadge.label}</span>
-          </div>
+          {/* Admin Role Navigator Button (Permite que solo el admin pueda navegar en todos los roles) */}
+          {canSwitchRoles ? (
+            <div className="relative">
+              <button
+                onClick={() => setShowRoleMenu(!showRoleMenu)}
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded-xl border ${roleBadge.bg} inline-flex items-center gap-1.5 shadow-xs transition hover:shadow-md cursor-pointer active:scale-98`}
+                title="Menú exclusivo de Administrador: Navegar entre todos los roles"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#C9B368] animate-pulse" />
+                <RoleIcon className="w-3.5 h-3.5" />
+                <span>
+                  {activeRole === 'admin'
+                    ? 'Administración'
+                    : `[Admin] ${roleBadge.label}`}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+              </button>
+
+              {/* Role Switcher Dropdown */}
+              {showRoleMenu && (
+                <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white border border-stone-200 shadow-2xl p-2.5 z-50 animate-in fade-in duration-150 ring-1 ring-black/5">
+                  <div className="px-2.5 py-1.5 border-b border-stone-100 mb-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800 block">
+                      Navegación de Roles
+                    </span>
+                    <span className="text-[11px] text-stone-500">
+                      Privilegio Administrador ({currentUser?.name})
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    {/* Role: Admin */}
+                    <button
+                      onClick={() => handleSwitchRole('admin')}
+                      className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition cursor-pointer ${
+                        activeRole === 'admin'
+                          ? 'bg-[#1B1A18] text-[#C9B368] font-bold'
+                          : 'hover:bg-stone-100 text-stone-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4" />
+                        <div>
+                          <div className="text-xs font-bold">Administrador</div>
+                          <div className={`text-[10px] ${activeRole === 'admin' ? 'text-stone-300' : 'text-stone-400'}`}>
+                            Control total, catálogo y empleados
+                          </div>
+                        </div>
+                      </div>
+                      {activeRole === 'admin' && <span className="w-2 h-2 rounded-full bg-[#C9B368]" />}
+                    </button>
+
+                    {/* Role: Vendedor */}
+                    <button
+                      onClick={() => handleSwitchRole('vendedor')}
+                      className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition cursor-pointer ${
+                        activeRole === 'vendedor'
+                          ? 'bg-[#1B1A18] text-[#C9B368] font-bold'
+                          : 'hover:bg-stone-100 text-stone-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="w-4 h-4" />
+                        <div>
+                          <div className="text-xs font-bold">Módulo Vendedor</div>
+                          <div className={`text-[10px] ${activeRole === 'vendedor' ? 'text-stone-300' : 'text-stone-400'}`}>
+                            Pedidos, clientes y cotizaciones
+                          </div>
+                        </div>
+                      </div>
+                      {activeRole === 'vendedor' && <span className="w-2 h-2 rounded-full bg-[#C9B368]" />}
+                    </button>
+
+                    {/* Role: Cliente */}
+                    <button
+                      onClick={() => handleSwitchRole('cliente')}
+                      className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition cursor-pointer ${
+                        activeRole === 'cliente'
+                          ? 'bg-[#1B1A18] text-[#C9B368] font-bold'
+                          : 'hover:bg-stone-100 text-stone-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <ShoppingBag className="w-4 h-4" />
+                        <div>
+                          <div className="text-xs font-bold">Vista Cliente</div>
+                          <div className={`text-[10px] ${activeRole === 'cliente' ? 'text-stone-300' : 'text-stone-400'}`}>
+                            Catálogo y compras WhatsApp
+                          </div>
+                        </div>
+                      </div>
+                      {activeRole === 'cliente' && <span className="w-2 h-2 rounded-full bg-[#C9B368]" />}
+                    </button>
+                  </div>
+
+                  {activeRole !== 'admin' && (
+                    <div className="pt-2 mt-2 border-t border-stone-100">
+                      <button
+                        onClick={() => handleSwitchRole('admin')}
+                        className="w-full py-1.5 px-2 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Volver a Administración</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Non-Admin static role badge (No puede navegar a otros roles) */
+            <div
+              className={`px-2.5 py-1 text-[11px] sm:text-xs font-bold uppercase tracking-wider rounded-xl border ${roleBadge.bg} inline-flex items-center gap-1.5 shadow-2xs shrink-0`}
+              title="Rol asignado"
+            >
+              <RoleIcon className="w-3.5 h-3.5" />
+              <span>{roleBadge.label}</span>
+            </div>
+          )}
+
+          {/* Quick Return to Admin button if Admin is currently viewing as Vendedor or Cliente */}
+          {canSwitchRoles && activeRole !== 'admin' && (
+            <button
+              onClick={() => handleSwitchRole('admin')}
+              className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-[#1B1A18] text-[#C9B368] hover:bg-stone-800 transition cursor-pointer shadow-xs"
+              title="Volver a la vista de Administrador"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Ir a Admin</span>
+            </button>
+          )}
 
           {/* Admin Database Sample Data Cleaner */}
           {activeRole === 'admin' && (
@@ -150,21 +297,45 @@ export const Header: React.FC<HeaderProps> = ({
                       </span>
                     )}
                   </div>
-                  {unreadCount > 0 && (
+                  <div className="flex items-center gap-2">
+                    {/* Audio sound test button as requested */}
                     <button
-                      onClick={() => markAllNotificationsAsRead(activeRole || undefined)}
-                      className="text-xs text-[#C9B368] hover:underline font-semibold cursor-pointer"
+                      onClick={() => {
+                        playNotificationSound();
+                        triggerTestNotification(activeRole || 'admin', 'notificaciones');
+                      }}
+                      className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-lg border border-emerald-200 transition cursor-pointer"
+                      title="Probar sonido WhatsApp y ventana emergente"
                     >
-                      Marcar leídas
+                      <Volume2 className="w-3 h-3" />
+                      <span>Probar Sonido</span>
                     </button>
-                  )}
+
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={() => markAllNotificationsAsRead(activeRole || undefined)}
+                        className="text-xs text-[#C9B368] hover:underline font-semibold cursor-pointer"
+                      >
+                        Marcar leídas
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-3 max-h-80 overflow-y-auto space-y-2.5 divide-y divide-stone-100">
                   {roleNotifications.length === 0 ? (
-                    <p className="text-xs text-stone-400 py-6 text-center">
-                      No hay notificaciones pendientes.
-                    </p>
+                    <div className="py-6 text-center space-y-2">
+                      <p className="text-xs text-stone-400">
+                        No hay notificaciones pendientes.
+                      </p>
+                      <button
+                        onClick={() => triggerTestNotification(activeRole || 'admin', 'pedidos')}
+                        className="text-xs text-[#C9B368] hover:underline font-bold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Generar aviso de prueba</span>
+                      </button>
+                    </div>
                   ) : (
                     roleNotifications.map((notif) => (
                       <div
@@ -185,7 +356,14 @@ export const Header: React.FC<HeaderProps> = ({
                             )}
                           </div>
                           <div className="flex-1">
-                            <p className="text-xs font-bold text-[#1B1A18]">{notif.title}</p>
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="text-xs font-bold text-[#1B1A18]">{notif.title}</p>
+                              {notif.module && (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 capitalize">
+                                  {notif.module}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-stone-600 mt-0.5 leading-relaxed">{notif.message}</p>
                             <span className="text-[10px] text-stone-400 mt-1 inline-block">
                               {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -200,11 +378,11 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Logout / Switch Role Button */}
+          {/* Logout Button */}
           <button
-            onClick={() => setActiveRole(null)}
+            onClick={logout}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-stone-700 hover:text-red-600 hover:bg-red-50 border border-stone-200/80 transition text-xs sm:text-sm font-medium cursor-pointer"
-            title="Cerrar sesión o cambiar de rol"
+            title="Cerrar sesión segura"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden md:inline">Salir</span>

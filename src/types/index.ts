@@ -80,16 +80,37 @@ export interface Employee {
   totalSold?: number;
 }
 
+export type NotificationModule =
+  | 'pedidos'
+  | 'catalogo'
+  | 'ventas'
+  | 'empleados'
+  | 'clientes'
+  | 'notificaciones'
+  | 'sistema';
+
 export interface NotificationItem {
   id: string;
   title: string;
   message: string;
   type: 'order_created' | 'status_updated' | 'stock_alert' | 'system';
   targetRole: 'admin' | 'vendedor' | 'cliente';
+  module?: NotificationModule | string;
   targetUserId?: string;
   orderId?: string;
   read: boolean;
   createdAt: string;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  name: string;
+  role: 'admin' | 'vendedor';
+  isAdmin: boolean;
+  email?: string;
+  phone?: string;
+  photoUrl?: string;
 }
 
 export interface UserProfile {
@@ -112,3 +133,4 @@ export interface SupabaseConfig {
   projectId?: string;
   projectName?: string;
 }
+

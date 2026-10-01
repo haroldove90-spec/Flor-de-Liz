@@ -53,12 +53,13 @@ export const SupabaseSettingsModal: React.FC<SupabaseSettingsModalProps> = ({
   };
 
   const sqlSchema = `-- ==============================================================
--- SCHEMA COMPLETO PARA SUPABASE - COMERCIALIZADORA FLOR DE LÍZ
--- Negocio: Suministros Médicos y Material de Curación
+-- SCHEMA COMPLETO CORREGIDO PARA SUPABASE (POSTGRESQL)
+-- Comercializadora Flor De Liz: Suministros Médicos y Material de Curación
 -- Proyecto: ylzgfsvcibqsztarglja
+-- Sonido WhatsApp: https://ylzgfsvcibqsztarglja.supabase.co/storage/v1/object/public/Notificaciones/WhatsApp%20Ptt%202026-09-29%20at%2020.31.23.ogg
 -- ==============================================================
 
--- 1. TABLA DE PRODUCTOS (Suministros Médicos y Material de Curación)
+-- 1. TABLA DE PRODUCTOS (Suministros Médicos)
 CREATE TABLE IF NOT EXISTS flor_products (
   id TEXT PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,
@@ -71,6 +72,12 @@ CREATE TABLE IF NOT EXISTS flor_products (
   image_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Asegurar columnas si la tabla ya existía previamente
+ALTER TABLE IF EXISTS flor_products ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE IF EXISTS flor_products ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE IF EXISTS flor_products ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Suministros Médicos';
+ALTER TABLE IF EXISTS flor_products ADD COLUMN IF NOT EXISTS image_url TEXT;
 
 -- 2. TABLA DE CLIENTES (Clínicas, Hospitales, Farmacias, Doctores)
 CREATE TABLE IF NOT EXISTS flor_clients (
@@ -87,7 +94,11 @@ CREATE TABLE IF NOT EXISTS flor_clients (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. TABLA DE PEDIDOS Y VENTAS
+ALTER TABLE IF EXISTS flor_clients ADD COLUMN IF NOT EXISTS business_name TEXT;
+ALTER TABLE IF EXISTS flor_clients ADD COLUMN IF NOT EXISTS rfc TEXT;
+ALTER TABLE IF EXISTS flor_clients ADD COLUMN IF NOT EXISTS whatsapp TEXT;
+
+-- 3. TABLA DE PEDIDOS Y VENTAS EN TIEMPO REAL
 CREATE TABLE IF NOT EXISTS flor_orders (
   id TEXT PRIMARY KEY,
   order_number TEXT NOT NULL UNIQUE,
@@ -110,23 +121,54 @@ CREATE TABLE IF NOT EXISTS flor_orders (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. TABLA DE EMPLEADOS Y ASESORES COMERCIALES
+-- Agregar columnas faltantes en flor_orders si ya existía
+ALTER TABLE IF EXISTS flor_orders ADD COLUMN IF NOT EXISTS vendedor_id TEXT;
+ALTER TABLE IF EXISTS flor_orders ADD COLUMN IF NOT EXISTS vendedor_name TEXT;
+ALTER TABLE IF EXISTS flor_orders ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'vendedor';
+ALTER TABLE IF EXISTS flor_orders ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE IF EXISTS flor_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- 4. TABLA DE EMPLEADOS Y ASESORES (Con credenciales privadas de acceso)
 CREATE TABLE IF NOT EXISTS flor_employees (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   position TEXT,
-  email TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL,
   phone TEXT,
   whatsapp TEXT,
   access_code TEXT,
+  username TEXT,
+  password TEXT,
   role TEXT DEFAULT 'vendedor',
   active BOOLEAN DEFAULT TRUE,
   sales_count INTEGER DEFAULT 0,
   total_sold NUMERIC(12, 2) DEFAULT 0.00,
+  photo_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. TABLA DE PERFILES Y FOTOS DE PERFIL (Administrador y Vendedor)
+-- Agregar columnas de login en flor_employees si no existían (evita error column username does not exist)
+ALTER TABLE IF EXISTS flor_employees ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE IF EXISTS flor_employees ADD COLUMN IF NOT EXISTS password TEXT;
+ALTER TABLE IF EXISTS flor_employees ADD COLUMN IF NOT EXISTS access_code TEXT;
+ALTER TABLE IF EXISTS flor_employees ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'vendedor';
+ALTER TABLE IF EXISTS flor_employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
+-- 5. TABLA DE NOTIFICACIONES EN TIEMPO REAL (Módulos, roles y avisos flotantes con sonido)
+CREATE TABLE IF NOT EXISTS flor_notifications (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  type TEXT DEFAULT 'system',
+  target_role TEXT NOT NULL DEFAULT 'admin',
+  module TEXT NOT NULL DEFAULT 'pedidos',
+  read BOOLEAN DEFAULT FALSE,
+  target_user_id TEXT,
+  order_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6. TABLA DE PERFILES CORPORATIVOS Y FOTOS
 CREATE TABLE IF NOT EXISTS flor_profiles (
   id TEXT PRIMARY KEY,
   role TEXT NOT NULL UNIQUE,
@@ -140,20 +182,22 @@ CREATE TABLE IF NOT EXISTS flor_profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ÍNDICES PARA BÚSQUEDA RÁPIDA
+-- ÍNDICES DE ALTO RENDIMIENTO
 CREATE INDEX IF NOT EXISTS idx_products_code ON flor_products(code);
-CREATE INDEX IF NOT EXISTS idx_products_category ON flor_products(category);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON flor_orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_number ON flor_orders(order_number);
+CREATE INDEX IF NOT EXISTS idx_notifs_target ON flor_notifications(target_role, module);
+CREATE INDEX IF NOT EXISTS idx_employees_user ON flor_employees(username);
 
 -- ACTIVAR ROW LEVEL SECURITY (RLS)
 ALTER TABLE flor_products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE flor_clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE flor_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE flor_employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE flor_notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE flor_profiles ENABLE ROW LEVEL SECURITY;
 
--- POLÍTICAS PÚBLICAS PARA ACCESO DESDE LA APP
+-- POLÍTICAS DE ACCESO LIBRE PARA LA APP (ANON KEY)
 DROP POLICY IF EXISTS "Public access flor_products" ON flor_products;
 CREATE POLICY "Public access flor_products" ON flor_products FOR ALL USING (true) WITH CHECK (true);
 
@@ -166,13 +210,30 @@ CREATE POLICY "Public access flor_orders" ON flor_orders FOR ALL USING (true) WI
 DROP POLICY IF EXISTS "Public access flor_employees" ON flor_employees;
 CREATE POLICY "Public access flor_employees" ON flor_employees FOR ALL USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Public access flor_notifications" ON flor_notifications;
+CREATE POLICY "Public access flor_notifications" ON flor_notifications FOR ALL USING (true) WITH CHECK (true);
+
 DROP POLICY IF EXISTS "Public access flor_profiles" ON flor_profiles;
 CREATE POLICY "Public access flor_profiles" ON flor_profiles FOR ALL USING (true) WITH CHECK (true);
 
--- ACTUALIZACIÓN DE COLUMNAS OPCIONALES PARA EMPLEADOS (Si ya creaste la tabla antes)
-ALTER TABLE flor_employees ADD COLUMN IF NOT EXISTS username TEXT;
-ALTER TABLE flor_employees ADD COLUMN IF NOT EXISTS password TEXT;
-ALTER TABLE flor_employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
+-- REGISTRO LIMPIO Y SEGURO DE LAS CREDENCIALES SOLICITADAS
+-- 1) Administrador: emilio_admin / Admin#1
+-- 2) Vendedor: haroldo90 / Chevropar#1970
+DELETE FROM flor_employees WHERE username IN ('emilio_admin', 'haroldo90') OR id IN ('user_emilio_admin', 'emp_haroldo') OR email IN ('emilio_admin@flordeliz.com', 'haroldo90@flordeliz.com');
+
+INSERT INTO flor_employees (
+  id, name, position, email, phone, whatsapp, username, password, access_code, role, active, sales_count, total_sold
+) VALUES 
+  ('user_emilio_admin', 'Emilio Administrador', 'Director General & Administrador', 'emilio_admin@flordeliz.com', '5512345678', '5512345678', 'emilio_admin', 'Admin#1', 'Admin#1', 'admin', true, 0, 0.00),
+  ('emp_haroldo', 'Haroldo Asesor Comercial', 'Asesor Comercial de Ventas', 'haroldo90@flordeliz.com', '5578901234', '5578901234', 'haroldo90', 'Chevropar#1970', 'Chevropar#1970', 'vendedor', true, 0, 0.00);
+
+-- HABILITAR PUBLICACIÓN EN TIEMPO REAL NATIVO (SI EXISTE LA PUBLICACIÓN)
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE flor_orders, flor_notifications, flor_products, flor_clients, flor_employees;
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END $$;
 `;
 
   const handleCopySql = () => {

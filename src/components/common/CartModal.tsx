@@ -119,8 +119,14 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
     setCompletedOrder(order);
     clearCart();
 
-    // If client role, trigger WhatsApp opening
+    // Store order ID locally so client orders list always includes this purchase
     if (activeRole === 'cliente') {
+      try {
+        const prev = JSON.parse(localStorage.getItem('flor_my_client_order_ids') || '[]');
+        if (!prev.includes(order.id)) {
+          localStorage.setItem('flor_my_client_order_ids', JSON.stringify([order.id, ...prev]));
+        }
+      } catch {}
       const waLink = createWhatsAppOrderLink(order);
       window.open(waLink, '_blank');
     }

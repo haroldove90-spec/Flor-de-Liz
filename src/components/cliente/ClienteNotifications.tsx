@@ -16,7 +16,7 @@ export const ClienteNotifications: React.FC = () => {
           Avisos de Pedidos y Entrega
         </h1>
         <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-          Notificaciones automáticas sobre el avance de tus pedidos florales
+          Notificaciones automáticas sobre el avance de tus pedidos de suministros médicos y curación
         </p>
       </div>
 
@@ -26,7 +26,7 @@ export const ClienteNotifications: React.FC = () => {
             <Bell className="w-10 h-10 text-stone-300 mx-auto mb-2" />
             <p className="text-sm font-semibold text-stone-700">Sin avisos en este momento</p>
             <p className="text-xs text-stone-400 mt-0.5">
-              Te notificaremos en cuanto tu pedido sea recibido, montado en taller o salga en ruta.
+              Te notificaremos en cuanto tu pedido sea recibido, preparado en almacén o salga en ruta hacia tu clínica o consultorio.
             </p>
           </div>
         ) : (

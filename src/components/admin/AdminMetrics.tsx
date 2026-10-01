@@ -15,7 +15,10 @@ import { useApp } from '../../context/AppContext';
 import { exportSalesReportPDF } from '../../utils/pdfExport';
 
 export const AdminMetrics: React.FC = () => {
-  const { orders, products, employees, clients } = useApp();
+  const { orders, products, employees, clients, currentUser, adminProfile } = useApp();
+
+  const connectedName = currentUser?.name || adminProfile.name || 'Emilio Administrador';
+  const connectedUsername = currentUser?.username || 'emilio_admin';
 
   // Metrics calculations
   const totalRevenue = orders.reduce((sum, o) => sum + (o.status !== 'Cancelado' ? o.total : 0), 0);
@@ -66,16 +69,25 @@ export const AdminMetrics: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Top Banner / Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-stone-200/80">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-stone-200/80">
         <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#1B1A18] text-[#C9B368] border border-[#C9B368]/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Usuario Conectado: {connectedName}
+            </span>
+            <span className="text-[11px] font-mono text-stone-500">
+              @{connectedUsername}
+            </span>
+          </div>
           <h1 className="text-xl sm:text-2xl font-bold text-[#1B1A18] tracking-tight">
             Panel de Métricas y Ventas
           </h1>
           <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-            Rendimiento general de Comercializadora Flor de Líz
+            Bienvenido al panel central, <span className="font-semibold text-stone-800">{connectedName}</span>. Rendimiento en tiempo real de Suministros Médicos.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => exportSalesReportPDF(orders, 'General')}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white text-xs font-semibold shadow-sm transition cursor-pointer"

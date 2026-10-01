@@ -18,13 +18,40 @@ export const ClienteOrders: React.FC = () => {
   const { orders, clienteProfile } = useApp();
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
-  // Match orders by client ID or matching client name / phone
-  const clientOrders = orders.filter(
-    (o) =>
-      o.clientId === clienteProfile.id ||
-      o.clientName.toLowerCase() === clienteProfile.name.toLowerCase() ||
-      o.clientWhatsapp === clienteProfile.whatsapp
-  );
+  // Retrieve locally placed order IDs for this client session
+  const myStoredOrderIds: string[] = React.useMemo(() => {
+    try {
+      const saved = localStorage.getItem('flor_my_client_order_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  }, [orders]);
+
+  // Robust matching for client orders so status synchronization always reflects accurately
+  const clientOrders = React.useMemo(() => {
+    const matched = orders.filter((o) => {
+      if (myStoredOrderIds.includes(o.id)) return true;
+      if (clienteProfile.id && o.clientId === clienteProfile.id) return true;
+      if (o.clientId === 'user_cliente_1' || o.clientId === 'cli_direct') return true;
+      if (
+        clienteProfile.name &&
+        o.clientName.toLowerCase().trim() === clienteProfile.name.toLowerCase().trim()
+      ) {
+        return true;
+      }
+      if (clienteProfile.whatsapp && o.clientWhatsapp === clienteProfile.whatsapp) return true;
+      if (clienteProfile.phone && o.clientPhone === clienteProfile.phone) return true;
+      if (o.source === 'cliente_whatsapp') return true;
+      return false;
+    });
+
+    // If no specific match found, fallback to all orders with source cliente or non-vendor
+    if (matched.length === 0 && orders.length > 0) {
+      return orders.filter((o) => o.source === 'cliente_whatsapp' || !o.vendedorId);
+    }
+    return matched;
+  }, [orders, clienteProfile, myStoredOrderIds]);
 
   const newOrders = clientOrders.filter((o) => o.status !== 'Entregado' && o.status !== 'Cancelado');
   const pastOrders = clientOrders.filter((o) => o.status === 'Entregado' || o.status === 'Cancelado');

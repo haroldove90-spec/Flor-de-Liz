@@ -50,7 +50,7 @@ export const BottomBar: React.FC = () => {
   const navItems = getNavItems();
 
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200/90 shadow-lg px-2 pb-safe">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#1B1A18] border-t border-[#C9B368]/30 shadow-2xl px-2 pb-safe">
       <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -61,18 +61,24 @@ export const BottomBar: React.FC = () => {
               onClick={() => setActiveTab(item.id)}
               className={`flex-1 flex flex-col items-center justify-center py-1 transition-all duration-200 select-none cursor-pointer ${
                 isActive
-                  ? 'text-[#1B1A18] font-bold'
-                  : 'text-stone-500 hover:text-stone-800'
+                  ? 'text-[#C9B368] font-bold'
+                  : 'text-[#C9B368]/70 hover:text-[#C9B368]'
               }`}
             >
               <div
                 className={`p-1.5 rounded-xl transition-all duration-200 ${
-                  isActive ? 'bg-[#C9B368] text-[#1B1A18] shadow-xs scale-105' : 'bg-transparent'
+                  isActive
+                    ? 'bg-[#C9B368]/20 ring-1 ring-[#C9B368] text-[#C9B368] shadow-xs scale-105'
+                    : 'bg-transparent text-[#C9B368]'
                 }`}
               >
-                <Icon className="w-5 h-5" />
+                <Icon className="w-5 h-5 text-[#C9B368]" />
               </div>
-              <span className={`text-[10px] mt-0.5 tracking-tight ${isActive ? 'font-bold text-[#1B1A18]' : 'font-medium'}`}>
+              <span
+                className={`text-[10px] mt-0.5 tracking-tight ${
+                  isActive ? 'font-bold text-[#C9B368]' : 'font-medium text-[#C9B368]/80'
+                }`}
+              >
                 {item.label}
               </span>
             </button>

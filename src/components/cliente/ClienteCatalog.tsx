@@ -4,7 +4,6 @@ import {
   Search,
   ShoppingCart,
   Plus,
-  Send,
   Sparkles,
   Tag,
   Check,
@@ -12,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Product } from '../../types';
-import { createWhatsAppOrderLink } from '../../utils/pdfExport';
 
 interface ClienteCatalogProps {
   onOpenCart: () => void;
@@ -54,22 +52,6 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
     addToCart(product, 1);
     setAddedId(product.id);
     setTimeout(() => setAddedId(null), 1500);
-  };
-
-  const handleInstantWhatsAppBuy = (product: Product) => {
-    const order = createOrder({
-      clientId: clienteProfile.id || 'cli_direct',
-      clientName: clienteProfile.name || 'Cliente Flor de Líz',
-      clientBusiness: clienteProfile.businessName,
-      clientPhone: clienteProfile.phone || '5512345678',
-      clientWhatsapp: clienteProfile.whatsapp || '5512345678',
-      clientAddress: clienteProfile.address || 'Confirmada por WhatsApp',
-      items: [{ product, quantity: 1 }],
-      source: 'cliente_whatsapp',
-    });
-
-    const waLink = createWhatsAppOrderLink(order);
-    window.open(waLink, '_blank');
   };
 
   return (
@@ -197,34 +179,24 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
                   </div>
                 </div>
 
-                {/* Actions: Add to cart & Direct WhatsApp order */}
-                <div className="p-2 sm:p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center gap-1.5 sm:gap-2">
+                {/* Actions: Add to cart */}
+                <div className="p-2.5 sm:p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center">
                   <button
                     onClick={() => handleAddToCart(prod)}
-                    className="flex-1 py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg sm:rounded-xl border border-stone-300 hover:border-[#1B1A18] hover:bg-stone-50 text-stone-800 text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
-                    title="Agregar al carrito"
+                    className="w-full py-2 px-3 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-[#C9B368] hover:text-[#d8c37d] text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
+                    title="Agregar este producto al carrito"
                   >
                     {addedId === prod.id ? (
                       <>
-                        <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600" />
-                        <span className="hidden sm:inline">En carrito</span>
-                        <span className="sm:hidden">Listo</span>
+                        <Check className="w-4 h-4 text-emerald-400" />
+                        <span>¡Agregado al Carrito!</span>
                       </>
                     ) : (
                       <>
-                        <Plus className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#C9B368]" />
-                        <span>Carrito</span>
+                        <Plus className="w-4 h-4 text-[#C9B368]" />
+                        <span>Agregar al Carrito</span>
                       </>
                     )}
-                  </button>
-
-                  <button
-                    onClick={() => handleInstantWhatsAppBuy(prod)}
-                    className="flex-1 py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg sm:rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] sm:text-xs font-bold transition flex items-center justify-center gap-1 shadow-2xs cursor-pointer"
-                    title="Pedir este producto de inmediato por WhatsApp"
-                  >
-                    <Send className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                    <span>WhatsApp</span>
                   </button>
                 </div>
               </div>

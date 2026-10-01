@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { RoleSelector } from './components/RoleSelector';
+import { LoginForm } from './components/LoginForm';
 import { Header } from './components/Header';
 import { BottomBar } from './components/BottomBar';
 import { Sidebar } from './components/Sidebar';
 import { CartModal } from './components/common/CartModal';
 import { SupabaseSettingsModal } from './components/admin/SupabaseSettingsModal';
+import { FloatingNotificationBanner } from './components/common/FloatingNotificationBanner';
+import { FloatingWhatsAppButton } from './components/common/FloatingWhatsAppButton';
 
 // Admin Views
 import { AdminMetrics } from './components/admin/AdminMetrics';
@@ -20,6 +22,7 @@ import { VendedorMetrics } from './components/vendedor/VendedorMetrics';
 import { VendedorCatalog } from './components/vendedor/VendedorCatalog';
 import { VendedorClients } from './components/vendedor/VendedorClients';
 import { VendedorOrders } from './components/vendedor/VendedorOrders';
+import { VendedorNotifications } from './components/vendedor/VendedorNotifications';
 import { VendedorProfile } from './components/vendedor/VendedorProfile';
 
 // Cliente Views
@@ -34,7 +37,7 @@ import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { WifiOff } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
-  const { activeRole, activeTab, clienteProfile } = useApp();
+  const { activeRole, activeTab, currentUser } = useApp();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
@@ -42,9 +45,9 @@ const MainLayout: React.FC = () => {
 
   const isOnline = useOnlineStatus();
 
-  // If on Role Selection (Inicio), show clean RoleSelector without header
-  if (!activeRole) {
-    return <RoleSelector />;
+  // Private system: require authentication before accessing any role view
+  if (!currentUser || !activeRole) {
+    return <LoginForm />;
   }
 
   // Render module based on role and activeTab
@@ -78,6 +81,8 @@ const MainLayout: React.FC = () => {
           return <VendedorClients />;
         case 'pedidos':
           return <VendedorOrders />;
+        case 'notificaciones':
+          return <VendedorNotifications />;
         case 'perfil':
           return <VendedorProfile />;
         default:
@@ -155,6 +160,12 @@ const MainLayout: React.FC = () => {
         isOpen={isSupabaseModalOpen}
         onClose={() => setIsSupabaseModalOpen(false)}
       />
+
+      {/* Real-time Floating Notification Banner with WhatsApp audio */}
+      <FloatingNotificationBanner />
+
+      {/* Floating WhatsApp Executive Chat Button */}
+      <FloatingWhatsAppButton />
     </div>
   );
 };

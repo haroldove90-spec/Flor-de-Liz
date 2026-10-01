@@ -12,7 +12,10 @@ import {
 import { useApp } from '../../context/AppContext';
 
 export const VendedorMetrics: React.FC = () => {
-  const { orders, vendedorProfile, clients } = useApp();
+  const { orders, vendedorProfile, clients, currentUser } = useApp();
+
+  const connectedName = currentUser?.name || vendedorProfile.name || 'Haroldo Asesor Comercial';
+  const connectedUsername = currentUser?.username || 'haroldo90';
 
   // Orders attributed to this vendor (or all if not filtered)
   const myOrders = orders.filter(
@@ -43,13 +46,22 @@ export const VendedorMetrics: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="pb-2 border-b border-stone-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div className="pb-3 border-b border-stone-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#1B1A18] text-[#C9B368] border border-[#C9B368]/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Asesor Conectado: {connectedName}
+            </span>
+            <span className="text-[11px] font-mono text-stone-500">
+              @{connectedUsername}
+            </span>
+          </div>
           <h1 className="text-xl sm:text-2xl font-bold text-[#1B1A18] tracking-tight">
-            Métricas de Ventas — {vendedorProfile.name}
+            Métricas de Ventas — {connectedName}
           </h1>
           <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-            Seguimiento de metas diarias, mensuales y comisiones ganadas
+            Bienvenido, <span className="font-semibold text-stone-800">{connectedName}</span>. Seguimiento de tus metas y ventas en tiempo real.
           </p>
         </div>
         <span className="px-3 py-1 rounded-lg bg-[#C9B368]/20 text-[#1B1A18] font-bold text-xs self-start sm:self-auto">

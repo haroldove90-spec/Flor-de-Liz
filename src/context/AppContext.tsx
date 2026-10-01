@@ -10,9 +10,11 @@ import {
   UserProfile,
   OrderStatus,
   SupabaseConfig,
+  AuthUser,
 } from '../types';
 import { ANALYZED_MEDICAL_PRICE_LIST_CSV } from '../data/analyzedPriceList';
 import { parseRawMedicalPriceList } from '../utils/excelImport';
+import { playNotificationSound } from '../utils/audioPlayer';
 
 interface CartItem {
   product: Product;
@@ -20,7 +22,13 @@ interface CartItem {
 }
 
 interface AppContextType {
-  // Role & User
+  // Authentication & Session
+  currentUser: AuthUser | null;
+  login: (credentials: { username?: string; password?: string }) => { success: boolean; message: string; user?: AuthUser };
+  logout: () => void;
+  canSwitchRoles: boolean;
+
+  // Role & Navigation
   activeRole: UserRole | null;
   setActiveRole: (role: UserRole | null) => void;
   adminProfile: UserProfile;
@@ -82,11 +90,16 @@ interface AppContextType {
   fetchEmployeesFromSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
   uploadEmployeesToSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
 
-  // Notifications
+  // Notifications, Floating Popup & Sound
   notifications: NotificationItem[];
   addNotification: (notification: Omit<NotificationItem, 'id' | 'createdAt' | 'read'>) => void;
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: (role?: UserRole) => void;
+  floatingNotification: NotificationItem | null;
+  dismissFloatingNotification: () => void;
+  playNotificationSound: () => void;
+  triggerTestNotification: (role?: UserRole, moduleName?: string) => void;
+  fetchNotificationsFromSupabase: () => Promise<void>;
 
   // Cart (shared for Vendedor and Cliente)
   cart: CartItem[];
@@ -110,6 +123,10 @@ interface AppContextType {
   fetchProductsFromSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
   clearSupabaseCloudRecords: () => Promise<{ success: boolean; message: string }>;
 
+  // WhatsApp Support Configuration
+  whatsappSupportNumber: string;
+  updateWhatsappSupportNumber: (newNumber: string) => Promise<{ success: boolean; message: string }>;
+
   // Active view within current role
   activeTab: string;
   setActiveTab: (tab: string) => void;
@@ -118,7 +135,9 @@ interface AppContextType {
 const STORAGE_KEYS = {
   ACTIVE_ROLE: 'flor_active_role',
   ACTIVE_TAB: 'flor_active_tab',
-  PRODUCTS: 'flor_products_v2', // v2 to ensure old flower products are cleared
+  AUTH_USER: 'flor_auth_user_v2',
+  WHATSAPP_SUPPORT: 'flor_whatsapp_support_v2',
+  PRODUCTS: 'flor_products_v2',
   CLIENTS: 'flor_clients_v2',
   ORDERS: 'flor_orders_v2',
   EMPLOYEES: 'flor_employees_v2',
@@ -187,8 +206,23 @@ const INITIAL_CLIENTS: Client[] = [
     createdByVendedorId: 'emp_2',
   },
 ];
-
 const INITIAL_EMPLOYEES: Employee[] = [
+  {
+    id: 'emp_haroldo',
+    name: 'Haroldo Asesor Comercial',
+    position: 'Asesor Comercial de Ventas',
+    email: 'haroldo90@flordeliz.com',
+    username: 'haroldo90',
+    password: 'Chevropar#1970',
+    phone: '5578901234',
+    whatsapp: '5578901234',
+    accessCode: 'Chevropar#1970',
+    role: 'vendedor',
+    active: true,
+    salesCount: 12,
+    totalSold: 21500.0,
+    createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
+  },
   {
     id: 'emp_1',
     name: 'Rodrigo Morales Peña',
@@ -282,28 +316,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const VALID_ROLES: UserRole[] = ['admin', 'vendedor', 'cliente'];
 
-  // 1. Initial Role: Check URL hash first (#admin/catalogo), then localStorage, then sessionStorage
-  const [activeRole, setActiveRoleState] = useState<UserRole | null>(() => {
-    if (typeof window !== 'undefined' && window.location.hash) {
-      const cleanHash = window.location.hash.replace(/^#\/?/, '');
-      const roleFromHash = cleanHash.split('/')[0] as UserRole;
-      if (VALID_ROLES.includes(roleFromHash)) {
-        return roleFromHash;
+  // Session & Authentication state
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.AUTH_USER);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
       }
-    }
-    const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_ROLE);
-    if (saved && VALID_ROLES.includes(saved as UserRole)) {
-      return saved as UserRole;
-    }
-    try {
-      const sessionSaved = sessionStorage.getItem(STORAGE_KEYS.ACTIVE_ROLE);
-      if (sessionSaved && VALID_ROLES.includes(sessionSaved as UserRole)) {
-        return sessionSaved as UserRole;
-      }
-    } catch {
-      // sessionStorage restricted
     }
     return null;
+  });
+
+  const canSwitchRoles = !!(currentUser && currentUser.isAdmin);
+
+  // Floating Notification Toast State
+  const [floatingNotification, setFloatingNotification] = useState<NotificationItem | null>(null);
+  const dismissFloatingNotification = () => setFloatingNotification(null);
+
+  // 1. Initial Role: If not logged in, system is private and requires login (activeRole = null)
+  const [activeRole, setActiveRoleState] = useState<UserRole | null>(() => {
+    const savedUser = localStorage.getItem(STORAGE_KEYS.AUTH_USER);
+    if (!savedUser) return null;
+    let authUser: AuthUser | null = null;
+    try {
+      authUser = JSON.parse(savedUser);
+    } catch {
+      return null;
+    }
+    if (!authUser) return null;
+
+    // Admin can restore role from URL hash or storage, defaulting to 'admin'
+    if (authUser.isAdmin) {
+      if (typeof window !== 'undefined' && window.location.hash) {
+        const cleanHash = window.location.hash.replace(/^#\/?/, '');
+        const roleFromHash = cleanHash.split('/')[0] as UserRole;
+        if (VALID_ROLES.includes(roleFromHash)) {
+          return roleFromHash;
+        }
+      }
+      const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_ROLE);
+      if (saved && VALID_ROLES.includes(saved as UserRole)) {
+        return saved as UserRole;
+      }
+      return 'admin';
+    }
+
+    // Non-admin (e.g. Haroldo) is strictly restricted to their assigned role
+    return authUser.role as UserRole;
   });
 
   // 2. Initial Tab: Check URL hash (#admin/pedidos), then localStorage, then sessionStorage
@@ -364,6 +425,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const clean = window.location.hash.replace(/^#\/?/, '');
       const [rolePart, tabPart] = clean.split('/');
       if (VALID_ROLES.includes(rolePart as UserRole)) {
+        if (!currentUser) {
+          setActiveRoleState(null);
+          return;
+        }
+        // Role protection: If non-admin attempts to switch roles via URL, redirect to assigned role
+        if (!currentUser.isAdmin && rolePart !== currentUser.role) {
+          window.history.replaceState(null, '', `#${currentUser.role}/${tabPart || 'catalogo'}`);
+          setActiveRoleState(currentUser.role as UserRole);
+          return;
+        }
         if (rolePart !== activeRole) {
           setActiveRoleState(rolePart as UserRole);
         }
@@ -374,38 +445,191 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [activeRole, activeTab]);
+  }, [activeRole, activeTab, currentUser]);
 
   const setActiveRole = (role: UserRole | null) => {
+    if (!role) {
+      logout();
+      return;
+    }
+
+    // Role protection: Only admin can switch/navigate among all roles!
+    if (currentUser && !currentUser.isAdmin && role !== currentUser.role) {
+      console.warn('Acceso denegado: solo el administrador puede navegar en todos los roles.');
+      return;
+    }
+
     setActiveRoleState(role);
-    if (role) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, role);
-      try {
-        sessionStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, role);
-      } catch {}
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, role);
+    try {
+      sessionStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, role);
+    } catch {}
 
-      // Keep user in current tab if already set, otherwise default to catalogo
-      const preservedTab = activeTab || localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB) || 'catalogo';
-      setActiveTabState(preservedTab);
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, preservedTab);
-      try {
-        sessionStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, preservedTab);
-      } catch {}
+    // Keep user in current tab if already set, otherwise default to catalogo
+    const preservedTab = activeTab || localStorage.getItem(STORAGE_KEYS.ACTIVE_TAB) || 'catalogo';
+    setActiveTabState(preservedTab);
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, preservedTab);
+    try {
+      sessionStorage.setItem(STORAGE_KEYS.ACTIVE_TAB, preservedTab);
+    } catch {}
 
-      if (typeof window !== 'undefined') {
-        window.history.replaceState(null, '', `#${role}/${preservedTab}`);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `#${role}/${preservedTab}`);
+    }
+  };
+
+  const login = (credentials: { username?: string; password?: string }): { success: boolean; message: string; user?: AuthUser } => {
+    const rawUser = (credentials.username || '').trim().toLowerCase();
+    const rawPass = (credentials.password || '').trim();
+
+    // 1. Emilio Admin: emilio_admin / Admin#1
+    // Supports login with username AND/OR password
+    const matchesAdminUser = rawUser === 'emilio_admin';
+    const matchesAdminPass = rawPass === 'Admin#1';
+
+    if (
+      (matchesAdminUser && matchesAdminPass) ||
+      (matchesAdminUser && !rawPass) ||
+      (matchesAdminPass && !rawUser) ||
+      (rawUser === 'admin#1') ||
+      (rawPass.toLowerCase() === 'emilio_admin')
+    ) {
+      const adminUser: AuthUser = {
+        id: 'user_emilio_admin',
+        username: 'emilio_admin',
+        name: 'Emilio Administrador',
+        role: 'admin',
+        isAdmin: true,
+        email: 'emilio_admin@flordeliz.com',
+      };
+      setCurrentUser(adminUser);
+      setActiveRoleState('admin');
+      setActiveTabState('metricas');
+      localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(adminUser));
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, 'admin');
+
+      addNotification({
+        title: '¡Bienvenido Administrador Emilio!',
+        message: 'Acceso autorizado con control total. Puedes navegar entre todos los roles desde el botón "Administración" en el Header.',
+        type: 'system',
+        targetRole: 'admin',
+        module: 'sistema',
+      });
+
+      return { success: true, message: 'Bienvenido, Emilio Administrador', user: adminUser };
+    }
+
+    // 2. Haroldo Vendedor: haroldo90 / Chevropar#1970
+    // Supports login with username AND/OR password
+    const matchesHaroldoUser = rawUser === 'haroldo90';
+    const matchesHaroldoPass = rawPass === 'Chevropar#1970';
+
+    if (
+      (matchesHaroldoUser && matchesHaroldoPass) ||
+      (matchesHaroldoUser && !rawPass) ||
+      (matchesHaroldoPass && !rawUser) ||
+      (rawUser === 'chevropar#1970') ||
+      (rawPass.toLowerCase() === 'haroldo90')
+    ) {
+      const haroldoUser: AuthUser = {
+        id: 'emp_haroldo',
+        username: 'haroldo90',
+        name: 'Haroldo Asesor Comercial',
+        role: 'vendedor',
+        isAdmin: false,
+        email: 'haroldo90@flordeliz.com',
+        phone: '5578901234',
+      };
+      setCurrentUser(haroldoUser);
+      setActiveRoleState('vendedor');
+      setActiveTabState('metricas');
+      localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(haroldoUser));
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, 'vendedor');
+
+      setVendedorProfile((prev) => ({
+        ...prev,
+        name: 'Haroldo Asesor Comercial',
+        email: 'haroldo90@flordeliz.com',
+      }));
+
+      addNotification({
+        title: '¡Bienvenido Asesor Haroldo!',
+        message: 'Acceso al módulo comercial de Vendedor. Gestiona clientes, pedidos y cotizaciones médicas.',
+        type: 'system',
+        targetRole: 'vendedor',
+        module: 'sistema',
+      });
+
+      return { success: true, message: 'Bienvenido, Haroldo', user: haroldoUser };
+    }
+
+    // 3. Check any registered employees in state or Supabase
+    const matchedEmployee = employees.find((emp) => {
+      const empUser = (emp.username || '').toLowerCase();
+      const empPass = emp.password || '';
+      const empCode = (emp.accessCode || '').toLowerCase();
+      const empEmail = (emp.email || '').toLowerCase();
+
+      if (rawUser && rawPass) {
+        if ((empUser === rawUser || empEmail === rawUser) && (empPass === rawPass || empCode === rawPass.toLowerCase())) {
+          return true;
+        }
       }
-    } else {
-      // User explicitly clicked logout
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_ROLE);
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_TAB);
-      try {
-        sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_ROLE);
-        sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_TAB);
-      } catch {}
-      if (typeof window !== 'undefined') {
-        window.history.replaceState(null, '', window.location.pathname);
+      if (rawUser && !rawPass) {
+        if (empUser === rawUser || empEmail === rawUser || empCode === rawUser) return true;
       }
+      if (rawPass && !rawUser) {
+        if (empPass === rawPass || empCode === rawPass.toLowerCase()) return true;
+      }
+      return false;
+    });
+
+    if (matchedEmployee) {
+      const empUser: AuthUser = {
+        id: matchedEmployee.id,
+        username: matchedEmployee.username || matchedEmployee.name,
+        name: matchedEmployee.name,
+        role: matchedEmployee.role || 'vendedor',
+        isAdmin: matchedEmployee.role === 'admin',
+        email: matchedEmployee.email,
+        phone: matchedEmployee.phone,
+      };
+      setCurrentUser(empUser);
+      setActiveRoleState(empUser.role);
+      setActiveTabState('metricas');
+      localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(empUser));
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, empUser.role);
+
+      addNotification({
+        title: `¡Bienvenido ${matchedEmployee.name}!`,
+        message: `Acceso al módulo ${empUser.role === 'admin' ? 'Administrador' : 'Vendedor'}.`,
+        type: 'system',
+        targetRole: empUser.role,
+        module: 'sistema',
+      });
+
+      return { success: true, message: `Bienvenido, ${matchedEmployee.name}`, user: empUser };
+    }
+
+    return {
+      success: false,
+      message: 'Credenciales inválidas. Verifica tu usuario y/o contraseña (ej. emilio_admin o haroldo90).',
+    };
+  };
+
+  const logout = () => {
+    setCurrentUser(null);
+    setActiveRoleState(null);
+    localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_ROLE);
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_TAB);
+    try {
+      sessionStorage.removeItem(STORAGE_KEYS.AUTH_USER);
+      sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_ROLE);
+      sessionStorage.removeItem(STORAGE_KEYS.ACTIVE_TAB);
+    } catch {}
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', window.location.pathname);
     }
   };
 
@@ -748,6 +972,330 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.SUPABASE_CONFIG, JSON.stringify(supabaseConfig));
   }, [supabaseConfig]);
+
+  // WhatsApp Support Configuration
+  const [whatsappSupportNumber, setWhatsappSupportNumberState] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.WHATSAPP_SUPPORT);
+    return saved || '+527771053528';
+  });
+
+  const updateWhatsappSupportNumber = async (newNumber: string): Promise<{ success: boolean; message: string }> => {
+    const clean = newNumber.trim();
+    if (!clean) return { success: false, message: 'El número no puede estar vacío.' };
+    setWhatsappSupportNumberState(clean);
+    localStorage.setItem(STORAGE_KEYS.WHATSAPP_SUPPORT, clean);
+
+    setAdminProfile((prev) => ({ ...prev, whatsapp: clean }));
+    try {
+      await saveProfileToSupabase('admin', { whatsapp: clean });
+    } catch {}
+
+    broadcastRealtimeEvent({
+      type: 'WHATSAPP_UPDATED',
+      number: clean,
+    });
+
+    return { success: true, message: `Número de WhatsApp actualizado a ${clean}` };
+  };
+
+  // Real-time broadcast channel & cross-tab synchronization
+  const realtimeChannelRef = React.useRef<BroadcastChannel | null>(null);
+  const knownOrderStatusesRef = React.useRef<Map<string, string>>(new Map());
+  const knownNotificationIdsRef = React.useRef<Set<string>>(new Set());
+
+  const broadcastRealtimeEvent = (data: Record<string, unknown>) => {
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        if (!realtimeChannelRef.current) {
+          realtimeChannelRef.current = new BroadcastChannel('flor_realtime_sync');
+        }
+        realtimeChannelRef.current.postMessage(data);
+      }
+    } catch {
+      // BroadcastChannel unavailable
+    }
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'flor_realtime_event_v2',
+          JSON.stringify({ ...data, ts: Date.now() })
+        );
+      }
+    } catch {
+      // Storage unavailable
+    }
+  };
+
+  // Real-time sync listener & background polling engine (Zero-refresh synchronization)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // Seed known orders from current state
+    orders.forEach((o) => {
+      knownOrderStatusesRef.current.set(o.id, o.status);
+    });
+    notifications.forEach((n) => {
+      knownNotificationIdsRef.current.add(n.id);
+    });
+
+    const handleIncomingRealtimeEvent = (data: Record<string, unknown>) => {
+      if (!data || !data.type) return;
+
+      // 1. Order Status Changed Event in real-time
+      if (data.type === 'ORDER_STATUS_CHANGED') {
+        const { orderId, status } = data;
+        const targetStatus = status as OrderStatus;
+
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === orderId
+              ? { ...o, status: targetStatus, updatedAt: new Date().toISOString() }
+              : o
+          )
+        );
+
+        if (orderId && targetStatus) {
+          knownOrderStatusesRef.current.set(String(orderId), targetStatus);
+        }
+
+        if (data.notification) {
+          const notif = data.notification as NotificationItem;
+          setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+          setFloatingNotification(notif);
+          playNotificationSound().catch(() => {});
+        }
+      }
+
+      // 2. New Order / Sale Created Event in real-time
+      if (data.type === 'ORDER_CREATED') {
+        const { order, adminNotif, clientNotif, notification } = data;
+        if (order) {
+          const ord = order as Order;
+          setOrders((prev) => [ord, ...prev.filter((o) => o.id !== ord.id)]);
+          knownOrderStatusesRef.current.set(ord.id, ord.status);
+        }
+
+        // Show appropriate notification based on who is viewing
+        const chosenNotif =
+          (activeRole === 'cliente' ? clientNotif : adminNotif) ||
+          notification ||
+          adminNotif ||
+          clientNotif;
+
+        if (chosenNotif) {
+          const notif = chosenNotif as NotificationItem;
+          setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+          setFloatingNotification(notif);
+          playNotificationSound().catch(() => {});
+        }
+      }
+
+      // 3. WhatsApp Support Number Updated
+      if (data.type === 'WHATSAPP_UPDATED' && data.number) {
+        setWhatsappSupportNumberState(String(data.number));
+      }
+    };
+
+    let channel: BroadcastChannel | null = null;
+    if ('BroadcastChannel' in window) {
+      channel = new BroadcastChannel('flor_realtime_sync');
+      realtimeChannelRef.current = channel;
+      channel.onmessage = (event) => {
+        handleIncomingRealtimeEvent(event.data);
+      };
+    }
+
+    // Storage event listener for same-origin tabs and fallback
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === 'flor_realtime_event_v2' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          handleIncomingRealtimeEvent(parsed);
+        } catch {}
+      }
+      if (e.key === STORAGE_KEYS.ORDERS && e.newValue) {
+        try {
+          const parsedOrders = JSON.parse(e.newValue);
+          if (Array.isArray(parsedOrders)) {
+            setOrders(parsedOrders);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageEvent);
+
+    // 4. Multi-device / multi-browser background polling engine (Every 2.0 seconds)
+    const pollingTimer = setInterval(async () => {
+      if (!supabaseConfig.url || !supabaseConfig.anonKey) return;
+
+      try {
+        const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+
+        // Pull latest orders from Supabase (ordered by created_at descending)
+        const ordersRes = await fetch(`${cleanUrl}/flor_orders?order=created_at.desc&limit=30`, {
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          },
+        });
+
+        if (ordersRes.ok) {
+          const cloudOrders: Record<string, unknown>[] = await ordersRes.json();
+          if (Array.isArray(cloudOrders) && cloudOrders.length > 0) {
+            setOrders((prevOrders) => {
+              let hasChanges = false;
+              const next = [...prevOrders];
+
+              for (const co of cloudOrders) {
+                const cloudId = String(co.id);
+                const cloudStatus = (co.status as OrderStatus) || 'En proceso';
+                const existingIdx = next.findIndex(
+                  (o) => o.id === cloudId || o.orderNumber === co.order_number
+                );
+
+                if (existingIdx >= 0) {
+                  const currentLocal = next[existingIdx];
+                  if (currentLocal.status !== cloudStatus) {
+                    hasChanges = true;
+                    const updatedOrder: Order = {
+                      ...currentLocal,
+                      status: cloudStatus,
+                      updatedAt: String(co.updated_at || new Date().toISOString()),
+                    };
+                    next[existingIdx] = updatedOrder;
+                    knownOrderStatusesRef.current.set(cloudId, cloudStatus);
+
+                    // Trigger instant notification with sound for status update
+                    const notif: NotificationItem = {
+                      id: `notif_sync_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                      title: `Estatus Actualizado: #${updatedOrder.orderNumber} -> ${cloudStatus}`,
+                      message: `El pedido #${updatedOrder.orderNumber} ahora está "${cloudStatus}".`,
+                      type: 'status_updated',
+                      targetRole: 'cliente',
+                      targetUserId: updatedOrder.clientId,
+                      orderId: updatedOrder.id,
+                      module: 'pedidos',
+                      read: false,
+                      createdAt: new Date().toISOString(),
+                    };
+
+                    setNotifications((p) => [notif, ...p]);
+                    setFloatingNotification(notif);
+                    playNotificationSound().catch(() => {});
+                  }
+                } else {
+                  // Brand new order detected from cloud
+                  hasChanges = true;
+                  let parsedItems: OrderItem[] = [];
+                  if (Array.isArray(co.items)) {
+                    parsedItems = co.items as OrderItem[];
+                  } else if (typeof co.items === 'string') {
+                    try {
+                      parsedItems = JSON.parse(co.items);
+                    } catch {
+                      parsedItems = [];
+                    }
+                  }
+
+                  const newOrder: Order = {
+                    id: cloudId,
+                    orderNumber: String(co.order_number || `MED-${Date.now()}`),
+                    clientId: String(co.client_id || ''),
+                    clientName: String(co.client_name || 'Cliente'),
+                    clientBusiness: String(co.client_business || ''),
+                    clientPhone: String(co.client_phone || ''),
+                    clientWhatsapp: String(co.client_whatsapp || ''),
+                    clientAddress: String(co.client_address || ''),
+                    items: parsedItems,
+                    subtotal: Number(co.subtotal || 0),
+                    discountTotal: Number(co.discount_total || 0),
+                    total: Number(co.total || 0),
+                    status: cloudStatus,
+                    source: (co.source as Order['source']) || 'vendedor',
+                    createdAt: String(co.created_at || new Date().toISOString()),
+                    updatedAt: String(co.updated_at || new Date().toISOString()),
+                    vendedorId: co.vendedor_id ? String(co.vendedor_id) : undefined,
+                    vendedorName: co.vendedor_name ? String(co.vendedor_name) : undefined,
+                    notes: co.notes ? String(co.notes) : undefined,
+                  };
+                  next.unshift(newOrder);
+                  knownOrderStatusesRef.current.set(cloudId, cloudStatus);
+
+                  // Trigger new sale alert with sound for admin
+                  const saleNotif: NotificationItem = {
+                    id: `notif_sale_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                    title: '¡Nueva Venta / Pedido Registrado!',
+                    message: `Pedido #${newOrder.orderNumber} recibido por $${newOrder.total.toFixed(2)} MXN en tiempo real.`,
+                    type: 'order_created',
+                    targetRole: 'admin',
+                    module: 'pedidos',
+                    orderId: newOrder.id,
+                    read: false,
+                    createdAt: new Date().toISOString(),
+                  };
+
+                  setNotifications((p) => [saleNotif, ...p]);
+                  setFloatingNotification(saleNotif);
+                  playNotificationSound().catch(() => {});
+                }
+              }
+
+              return hasChanges ? next : prevOrders;
+            });
+          }
+        }
+
+        // Pull latest notifications from Supabase
+        const notifRes = await fetch(`${cleanUrl}/flor_notifications?order=created_at.desc&limit=15`, {
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          },
+        });
+
+        if (notifRes.ok) {
+          const cloudNotifs: Record<string, unknown>[] = await notifRes.json();
+          if (Array.isArray(cloudNotifs) && cloudNotifs.length > 0) {
+            for (const cn of cloudNotifs) {
+              const notifId = String(cn.id);
+              if (!knownNotificationIdsRef.current.has(notifId)) {
+                knownNotificationIdsRef.current.add(notifId);
+                const item: NotificationItem = {
+                  id: notifId,
+                  title: String(cn.title || 'Aviso en tiempo real'),
+                  message: String(cn.message || ''),
+                  type: (cn.type as NotificationItem['type']) || 'system',
+                  targetRole: (cn.target_role as UserRole) || 'admin',
+                  module: (cn.module as NotificationItem['module']) || 'pedidos',
+                  read: Boolean(cn.read),
+                  targetUserId: cn.target_user_id ? String(cn.target_user_id) : undefined,
+                  orderId: cn.order_id ? String(cn.order_id) : undefined,
+                  createdAt: String(cn.created_at || new Date().toISOString()),
+                };
+
+                setNotifications((p) => [item, ...p.filter((n) => n.id !== item.id)]);
+
+                // If recently created (within last 45 seconds), pop up banner and sound
+                const ageMs = Date.now() - new Date(item.createdAt).getTime();
+                if (ageMs < 45000) {
+                  setFloatingNotification(item);
+                  playNotificationSound().catch(() => {});
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Handled silently
+      }
+    }, 2000);
+
+    return () => {
+      if (channel) channel.close();
+      window.removeEventListener('storage', handleStorageEvent);
+      clearInterval(pollingTimer);
+    };
+  }, [supabaseConfig, activeRole]);
 
   // Product Operations with automatic Supabase sync
   const addProduct = async (prod: Omit<Product, 'id' | 'createdAt'>) => {
@@ -1271,24 +1819,81 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Handled silently
     }
 
-    // Notify Admin & Client
-    const creatorLabel = orderData.source === 'cliente_whatsapp' ? 'el cliente' : orderData.vendedorName || 'un vendedor';
-    addNotification({
-      title: '¡Nuevo Pedido de Material Médico!',
-      message: `Pedido #${orderNumber} registrado por ${creatorLabel} para "${orderData.clientName}". Total: $${total.toFixed(2)} MXN.`,
+    // Dual Notifications: Admin gets Sale alert, Client gets Process alert
+    const creatorLabel =
+      orderData.source === 'cliente_whatsapp'
+        ? 'el cliente'
+        : orderData.vendedorName || 'un vendedor';
+
+    const adminSaleNotif: NotificationItem = {
+      id: `notif_sale_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      title: '¡Nueva Venta / Pedido Registrado!',
+      message: `Pedido #${orderNumber} recibido por $${total.toFixed(2)} MXN (${orderData.clientName}).`,
       type: 'order_created',
       targetRole: 'admin',
       orderId: newOrder.id,
-    });
+      module: 'pedidos',
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
 
-    addNotification({
+    const clientOrderNotif: NotificationItem = {
+      id: `notif_client_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       title: 'Tu pedido médico está En Proceso',
       message: `Hemos recibido tu solicitud #${orderNumber} por $${total.toFixed(2)} MXN y se encuentra en preparación.`,
       type: 'status_updated',
       targetRole: 'cliente',
       targetUserId: orderData.clientId,
       orderId: newOrder.id,
+      module: 'pedidos',
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    setNotifications((prev) => [adminSaleNotif, clientOrderNotif, ...prev]);
+
+    // Show floating banner & sound according to active role
+    if (activeRole === 'cliente') {
+      setFloatingNotification(clientOrderNotif);
+    } else {
+      setFloatingNotification(adminSaleNotif);
+    }
+    playNotificationSound().catch(() => {});
+
+    // Broadcast in real-time across open windows and tabs
+    broadcastRealtimeEvent({
+      type: 'ORDER_CREATED',
+      order: newOrder,
+      adminNotif: adminSaleNotif,
+      clientNotif: clientOrderNotif,
+      notification: adminSaleNotif,
     });
+
+    // Save notification to Supabase flor_notifications
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      fetch(`${cleanUrl}/flor_notifications`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          id: adminSaleNotif.id,
+          title: adminSaleNotif.title,
+          message: adminSaleNotif.message,
+          type: adminSaleNotif.type,
+          target_role: 'admin',
+          module: 'pedidos',
+          read: false,
+          target_user_id: null,
+          order_id: newOrder.id,
+          created_at: adminSaleNotif.createdAt,
+        }),
+      }).catch(() => {});
+    } catch {}
 
     return newOrder;
   };
@@ -1299,14 +1904,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((o) => {
         if (o.id === orderId) {
           targetOrder = { ...o, status, updatedAt: new Date().toISOString() };
-          addNotification({
-            title: `Estatus de Envío #${o.orderNumber}: ${status}`,
-            message: `Tu pedido #${o.orderNumber} ha pasado a estatus "${status}".`,
-            type: 'status_updated',
-            targetRole: 'cliente',
-            targetUserId: o.clientId,
-            orderId: o.id,
-          });
           return targetOrder;
         }
         return o;
@@ -1314,6 +1911,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     if (targetOrder) {
+      const statusNotif: NotificationItem = {
+        id: `notif_status_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        title: `Estatus Actualizado: #${targetOrder.orderNumber} -> ${status}`,
+        message: `El pedido #${targetOrder.orderNumber} para "${targetOrder.clientName}" ahora está "${status}".`,
+        type: 'status_updated',
+        targetRole: 'cliente',
+        targetUserId: targetOrder.clientId,
+        orderId: targetOrder.id,
+        module: 'pedidos',
+        read: false,
+        createdAt: new Date().toISOString(),
+      };
+
+      setNotifications((prev) => [statusNotif, ...prev]);
+      setFloatingNotification(statusNotif);
+      playNotificationSound().catch(() => {});
+
+      // Broadcast immediately across all browser tabs & windows without reload
+      broadcastRealtimeEvent({
+        type: 'ORDER_STATUS_CHANGED',
+        orderId,
+        status,
+        updatedAt: targetOrder.updatedAt,
+        notification: statusNotif,
+        order: targetOrder,
+      });
+
+      // Save status update to Supabase flor_orders
       try {
         const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
         fetch(`${cleanUrl}/flor_orders?id=eq.${encodeURIComponent(orderId)}`, {
@@ -1326,6 +1951,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           body: JSON.stringify({
             status,
             updated_at: new Date().toISOString(),
+          }),
+        }).catch(() => {});
+
+        // Save status notification to Supabase flor_notifications
+        fetch(`${cleanUrl}/flor_notifications`, {
+          method: 'POST',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({
+            id: statusNotif.id,
+            title: statusNotif.title,
+            message: statusNotif.message,
+            type: statusNotif.type,
+            target_role: statusNotif.targetRole,
+            module: 'pedidos',
+            read: false,
+            target_user_id: statusNotif.targetUserId || null,
+            order_id: statusNotif.orderId || null,
+            created_at: statusNotif.createdAt,
           }),
         }).catch(() => {});
       } catch {
@@ -1685,7 +2333,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Notification Operations
+  // Notification Operations with Sound and Floating Banner
   const addNotification = (notif: Omit<NotificationItem, 'id' | 'createdAt' | 'read'>) => {
     const newNotif: NotificationItem = {
       ...notif,
@@ -1694,6 +2342,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       read: false,
     };
     setNotifications((prev) => [newNotif, ...prev]);
+
+    // 1. Play user-provided WhatsApp notification sound
+    playNotificationSound().catch(() => {});
+
+    // 2. Trigger floating notification banner
+    setFloatingNotification(newNotif);
+
+    // 3. Save notification to Supabase flor_notifications table
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      fetch(`${cleanUrl}/flor_notifications`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          id: newNotif.id,
+          title: newNotif.title,
+          message: newNotif.message,
+          type: newNotif.type,
+          target_role: newNotif.targetRole,
+          module: newNotif.module || 'pedidos',
+          read: false,
+          target_user_id: newNotif.targetUserId || null,
+          order_id: newNotif.orderId || null,
+          created_at: newNotif.createdAt,
+        }),
+      }).catch(() => {
+        // Table may not yet be created in Supabase SQL editor; safe fallback
+      });
+    } catch {
+      // Ignore network errors
+    }
   };
 
   const markNotificationAsRead = (id: string) => {
@@ -1704,6 +2388,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications((prev) =>
       prev.map((n) => (!role || n.targetRole === role ? { ...n, read: true } : n))
     );
+  };
+
+  const triggerTestNotification = (role: UserRole = 'admin', moduleName = 'pedidos') => {
+    addNotification({
+      title: '¡Aviso en Tiempo Real Flor De Liz!',
+      message: `Notificación de prueba en tiempo real para el módulo "${moduleName}". Sonido WhatsApp activado.`,
+      type: 'order_created',
+      targetRole: role,
+      module: moduleName,
+    });
+  };
+
+  const fetchNotificationsFromSupabase = async (): Promise<void> => {
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const res = await fetch(`${cleanUrl}/flor_notifications?order=created_at.desc&limit=50`, {
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      if (res.ok) {
+        const rows: Record<string, unknown>[] = await res.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          const mapped: NotificationItem[] = rows.map((r) => ({
+            id: String(r.id),
+            title: String(r.title || 'Aviso'),
+            message: String(r.message || ''),
+            type: (r.type as NotificationItem['type']) || 'system',
+            targetRole: (r.target_role as UserRole) || 'admin',
+            module: String(r.module || 'pedidos'),
+            targetUserId: r.target_user_id ? String(r.target_user_id) : undefined,
+            orderId: r.order_id ? String(r.order_id) : undefined,
+            read: !!r.read,
+            createdAt: String(r.created_at || new Date().toISOString()),
+          }));
+
+          setNotifications((prev) => {
+            const existingIds = new Set(prev.map((n) => n.id));
+            const fresh = mapped.filter((n) => !existingIds.has(n.id));
+            return [...fresh, ...prev];
+          });
+        }
+      }
+    } catch {
+      // Table doesn't exist yet
+    }
   };
 
   // Cart Operations
@@ -2021,6 +2752,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        currentUser,
+        login,
+        logout,
+        canSwitchRoles,
+        floatingNotification,
+        dismissFloatingNotification,
+        playNotificationSound,
+        triggerTestNotification,
+        fetchNotificationsFromSupabase,
         activeRole,
         setActiveRole,
         activeTab,
@@ -2081,6 +2821,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSyncingCloud,
         isSyncingEmployees,
         syncProgress,
+        whatsappSupportNumber,
+        updateWhatsappSupportNumber,
       }}
     >
       {children}

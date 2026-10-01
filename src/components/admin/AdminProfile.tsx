@@ -12,12 +12,23 @@ import {
   Cloud,
   Check,
   AlertCircle,
+  MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { compressImageFile } from '../../utils/imageOptimizer';
 
 export const AdminProfile: React.FC = () => {
-  const { adminProfile, updateProfile, saveProfileToSupabase, supabaseConfig } = useApp();
+  const {
+    adminProfile,
+    updateProfile,
+    saveProfileToSupabase,
+    supabaseConfig,
+    whatsappSupportNumber,
+    updateWhatsappSupportNumber,
+  } = useApp();
+
+  const [whatsappSupport, setWhatsappSupport] = useState(whatsappSupportNumber || '+527771053528');
+  const [waUpdateMsg, setWaUpdateMsg] = useState<string | null>(null);
 
   const [name, setName] = useState(adminProfile.name);
   const [businessName, setBusinessName] = useState(adminProfile.businessName || '');
@@ -305,6 +316,65 @@ export const AdminProfile: React.FC = () => {
             </button>
           </div>
         </form>
+      </div>
+
+      {/* Floating WhatsApp Support Line Management Card */}
+      <div className="bg-white rounded-3xl border border-stone-200/90 shadow-sm p-5 sm:p-6 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-[#25D366]/15 text-[#25D366]">
+              <MessageCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-[#1B1A18]">
+                Línea de WhatsApp de Asesoría (Botón Flotante)
+              </h2>
+              <p className="text-xs text-stone-500">
+                Número oficial al que se enlaza el botón flotante para clientes en toda la tienda
+              </p>
+            </div>
+          </div>
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+            En Vivo
+          </span>
+        </div>
+
+        {waUpdateMsg && (
+          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <span>{waUpdateMsg}</span>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-stone-700 mb-1">
+              Número con Lada Internacional (Ej: +527771053528)
+            </label>
+            <input
+              type="text"
+              value={whatsappSupport}
+              onChange={(e) => setWhatsappSupport(e.target.value)}
+              placeholder="+527771053528"
+              className="w-full p-2.5 rounded-xl border border-stone-300 font-mono text-xs sm:text-sm focus:outline-none focus:border-[#C9B368]"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              const res = await updateWhatsappSupportNumber(whatsappSupport);
+              setWaUpdateMsg(res.message);
+              setTimeout(() => setWaUpdateMsg(null), 4000);
+            }}
+            className="self-end sm:self-auto py-2.5 px-5 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-[#C9B368] font-bold text-xs sm:text-sm shadow-xs transition cursor-pointer flex items-center justify-center gap-2"
+          >
+            <Check className="w-4 h-4" />
+            <span>Actualizar WhatsApp</span>
+          </button>
+        </div>
+        <p className="text-[11px] text-stone-400">
+          Al actualizar este número, se sincroniza en tiempo real para todos los clientes y visitantes sin recargar la página.
+        </p>
       </div>
     </div>
   );

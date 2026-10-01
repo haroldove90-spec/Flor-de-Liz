@@ -40,6 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     clearAllSampleData,
     restoreSampleData,
     supabaseConfig,
+    logout,
   } = useApp();
 
   if (!activeRole) return null;
@@ -74,6 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           { id: 'catalogo', label: 'Catálogo & Carrito', icon: Package, desc: 'Productos y levantar pedidos' },
           { id: 'clientes', label: 'Registro de Clientes', icon: UserCheck, desc: 'Crear, editar y gestionar' },
           { id: 'pedidos', label: 'Pedidos Realizados', icon: ShoppingCart, desc: 'Exportar PDF y WhatsApp' },
+          { id: 'notificaciones', label: 'Notificaciones', icon: Bell, desc: 'Avisos y pedidos asignados' },
           { id: 'perfil', label: 'Perfil de Vendedor', icon: User, desc: 'Datos personales y contacto' },
         ];
       case 'cliente':
@@ -232,11 +234,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Switch Role Button */}
           <button
-            onClick={() => setActiveRole(null)}
+            onClick={logout}
             className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl border border-stone-200 text-stone-700 hover:text-red-600 hover:bg-red-50 text-xs font-semibold transition cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
-            Cambiar Rol / Salir
+            Cerrar Sesión / Salir
           </button>
         </div>
       </aside>
