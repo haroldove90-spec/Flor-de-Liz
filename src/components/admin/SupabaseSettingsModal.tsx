@@ -167,11 +167,13 @@ CREATE TABLE IF NOT EXISTS flor_notifications (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. TABLA DE PERFILES CORPORATIVOS Y FOTOS
+-- 6. TABLA DE PERFILES CORPORATIVOS Y FOTOS INDIVIDUALES
 CREATE TABLE IF NOT EXISTS flor_profiles (
   id TEXT PRIMARY KEY,
-  role TEXT NOT NULL UNIQUE,
+  role TEXT NOT NULL,
   name TEXT NOT NULL,
+  username TEXT,
+  password TEXT,
   business_name TEXT,
   email TEXT,
   phone TEXT,
@@ -181,12 +183,20 @@ CREATE TABLE IF NOT EXISTS flor_profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Asegurar que role no sea UNIQUE para permitir perfiles aislados e independientes por usuario
+ALTER TABLE IF EXISTS flor_profiles DROP CONSTRAINT IF EXISTS flor_profiles_role_key;
+ALTER TABLE IF EXISTS flor_profiles ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE IF EXISTS flor_profiles ADD COLUMN IF NOT EXISTS password TEXT;
+ALTER TABLE IF EXISTS flor_profiles ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE IF EXISTS flor_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 -- ÍNDICES DE ALTO RENDIMIENTO
 CREATE INDEX IF NOT EXISTS idx_products_code ON flor_products(code);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON flor_orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_number ON flor_orders(order_number);
 CREATE INDEX IF NOT EXISTS idx_notifs_target ON flor_notifications(target_role, module);
 CREATE INDEX IF NOT EXISTS idx_employees_user ON flor_employees(username);
+CREATE INDEX IF NOT EXISTS idx_profiles_user ON flor_profiles(username);
 
 -- ACTIVAR ROW LEVEL SECURITY (RLS)
 ALTER TABLE flor_products ENABLE ROW LEVEL SECURITY;
@@ -216,20 +226,32 @@ DROP POLICY IF EXISTS "Public access flor_profiles" ON flor_profiles;
 CREATE POLICY "Public access flor_profiles" ON flor_profiles FOR ALL USING (true) WITH CHECK (true);
 
 -- REGISTRO LIMPIO Y SEGURO DE LAS CREDENCIALES SOLICITADAS
--- 1) Administrador: emilio_admin / Admin#1
--- 2) Vendedor: haroldo90 / Chevropar#1970
-DELETE FROM flor_employees WHERE username IN ('emilio_admin', 'haroldo90') OR id IN ('user_emilio_admin', 'emp_haroldo') OR email IN ('emilio_admin@flordeliz.com', 'haroldo90@flordeliz.com');
+-- 1) Administrador: emilio_admin / Admin#1 (Emilio Administrador)
+-- 2) Vendedor: haroldo90 / Chevropar#1970 (Harold Anguiano)
+DELETE FROM flor_employees WHERE username IN ('emilio_admin', 'haroldo90') OR id IN ('user_emilio_admin', 'emp_haroldo', 'profile_admin', 'profile_vendedor') OR email IN ('emilio_admin@flordeliz.com', 'haroldo90@flordeliz.com');
 
 INSERT INTO flor_employees (
-  id, name, position, email, phone, whatsapp, username, password, access_code, role, active, sales_count, total_sold
+  id, name, position, email, phone, whatsapp, username, password, access_code, photo_url, role, active, sales_count, total_sold
 ) VALUES 
-  ('user_emilio_admin', 'Emilio Administrador', 'Director General & Administrador', 'emilio_admin@flordeliz.com', '5512345678', '5512345678', 'emilio_admin', 'Admin#1', 'Admin#1', 'admin', true, 0, 0.00),
-  ('emp_haroldo', 'Haroldo Asesor Comercial', 'Asesor Comercial de Ventas', 'haroldo90@flordeliz.com', '5578901234', '5578901234', 'haroldo90', 'Chevropar#1970', 'Chevropar#1970', 'vendedor', true, 0, 0.00);
+  ('user_emilio_admin', 'Emilio Administrador', 'Director General & Administrador', 'emilio_admin@flordeliz.com', '5512345678', '5512345678', 'emilio_admin', 'Admin#1', 'Admin#1', '', 'admin', true, 0, 0.00),
+  ('emp_haroldo', 'Harold Anguiano', 'Asesor Comercial de Ventas', 'haroldo90@flordeliz.com', '5578901234', '5578901234', 'haroldo90', 'Chevropar#1970', 'Chevropar#1970', '', 'vendedor', true, 0, 0.00);
+
+-- PERFILES INDEPENDIENTES CON FOTOS AISLADAS
+INSERT INTO flor_profiles (
+  id, role, name, username, password, email, phone, whatsapp, business_name, address, photo_url
+) VALUES
+  ('profile_admin', 'admin', 'Emilio Administrador', 'emilio_admin', 'Admin#1', 'emilio_admin@flordeliz.com', '5512345678', '5512345678', 'Comercializadora Flor de Líz - Suministros Médicos', 'Insurgentes Sur 1450, CDMX', ''),
+  ('profile_vendedor', 'vendedor', 'Harold Anguiano', 'haroldo90', 'Chevropar#1970', 'haroldo90@flordeliz.com', '5578901234', '5578901234', 'Flor de Líz - División Suministros Médicos', 'Sucursal Central, CDMX', '')
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  username = EXCLUDED.username,
+  password = EXCLUDED.password,
+  email = EXCLUDED.email;
 
 -- HABILITAR PUBLICACIÓN EN TIEMPO REAL NATIVO (SI EXISTE LA PUBLICACIÓN)
 DO $$
 BEGIN
-  ALTER PUBLICATION supabase_realtime ADD TABLE flor_orders, flor_notifications, flor_products, flor_clients, flor_employees;
+  ALTER PUBLICATION supabase_realtime ADD TABLE flor_orders, flor_notifications, flor_products, flor_clients, flor_employees, flor_profiles;
 EXCEPTION
   WHEN OTHERS THEN NULL;
 END $$;

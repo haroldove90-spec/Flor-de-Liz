@@ -58,9 +58,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const currentProfile = getProfile();
-  const displayName = currentUser?.name || currentProfile?.name || 'Usuario';
-  const userPhoto = currentUser?.photoUrl || currentProfile?.photoUrl || '';
-  const userSubtitle = currentUser?.username ? `@${currentUser.username}` : (currentProfile?.businessName || currentProfile?.email);
+  const isRoleMatchingAuth = currentUser?.role === activeRole;
+
+  const displayName =
+    (isRoleMatchingAuth && currentUser?.name && !currentUser.name.includes(activeRole === 'admin' ? 'Harold' : 'Emilio')
+      ? currentUser.name
+      : currentProfile?.name) ||
+    (activeRole === 'admin' ? 'Emilio Administrador' : activeRole === 'vendedor' ? 'Harold Anguiano' : 'Cliente');
+
+  const userPhoto =
+    activeRole === 'admin'
+      ? (adminProfile.photoUrl || (isRoleMatchingAuth ? currentUser?.photoUrl : '') || '')
+      : activeRole === 'vendedor'
+      ? (vendedorProfile.photoUrl || (isRoleMatchingAuth ? currentUser?.photoUrl : '') || '')
+      : (clienteProfile?.photoUrl || '');
+
+  const userSubtitle =
+    (isRoleMatchingAuth && currentUser?.username ? `@${currentUser.username}` : undefined) ||
+    (currentProfile?.username ? `@${currentProfile.username}` : currentProfile?.businessName || currentProfile?.email);
 
   const getMenuItems = () => {
     switch (activeRole) {

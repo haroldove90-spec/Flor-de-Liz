@@ -817,8 +817,16 @@ export const AdminEmployees: React.FC = () => {
               {/* Actions */}
               <div className="space-y-2 pt-1">
                 <button
+                  onClick={() => handleShareWhatsApp(sharedCredentialsModal)}
+                  className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 shadow-md transition cursor-pointer active:scale-98"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Enviar Credenciales al WhatsApp del Empleado</span>
+                </button>
+
+                <button
                   onClick={() => handleCopyCredentials(sharedCredentialsModal)}
-                  className="w-full py-3 px-4 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-[#C9B368] font-bold flex items-center justify-center gap-2 shadow-md transition cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-[#C9B368] font-bold flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
                 >
                   {copiedId === sharedCredentialsModal.id ? (
                     <>
@@ -828,7 +836,7 @@ export const AdminEmployees: React.FC = () => {
                   ) : (
                     <>
                       <Copy className="w-4 h-4" />
-                      <span>Copiar Credenciales para Enviar al Empleado</span>
+                      <span>Copiar Credenciales al Portapapeles</span>
                     </>
                   )}
                 </button>

@@ -49,22 +49,32 @@ export const Header: React.FC<HeaderProps> = ({
     triggerTestNotification,
   } = useApp();
 
-  const displayName =
-    currentUser?.name ||
-    (activeRole === 'admin'
-      ? adminProfile.name
+  // Role-strict profile resolution: Emilio must never show Harold's name or photo, and vice versa
+  const activeProfile =
+    activeRole === 'admin'
+      ? adminProfile
       : activeRole === 'vendedor'
-      ? vendedorProfile.name
-      : clienteProfile.name) ||
-    'Usuario';
+      ? vendedorProfile
+      : clienteProfile;
+
+  const isRoleMatchingAuth = currentUser?.role === activeRole;
+
+  const displayName =
+    (isRoleMatchingAuth && currentUser?.name && !currentUser.name.includes(activeRole === 'admin' ? 'Harold' : 'Emilio')
+      ? currentUser.name
+      : activeProfile?.name) ||
+    (activeRole === 'admin'
+      ? 'Emilio Administrador'
+      : activeRole === 'vendedor'
+      ? 'Harold Anguiano'
+      : 'Cliente');
 
   const userPhoto =
-    currentUser?.photoUrl ||
-    (activeRole === 'admin'
-      ? adminProfile.photoUrl
+    activeRole === 'admin'
+      ? (adminProfile.photoUrl || (isRoleMatchingAuth ? currentUser?.photoUrl : '') || '')
       : activeRole === 'vendedor'
-      ? vendedorProfile.photoUrl
-      : clienteProfile.photoUrl);
+      ? (vendedorProfile.photoUrl || (isRoleMatchingAuth ? currentUser?.photoUrl : '') || '')
+      : (clienteProfile.photoUrl || '');
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
