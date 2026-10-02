@@ -76,7 +76,7 @@ export const ClienteOrders: React.FC = () => {
     const cleanPhone = rawPhone.replace(/\D/g, '');
     const message = `🌸 *CONSULTA DE PEDIDO - FLOR DE LIZ* 🌸\n\n` +
       `Hola, soy *${order.clientName}*.\n` +
-      `Quisiera consultar el estatus de mi pedido con folio *#${order.orderNumber}* ($${order.total.toFixed(2)} MXN).\n` +
+      `Quisiera consultar el estatus de mi pedido con folio *#${order.orderNumber}* ($${(order.total ?? 0).toFixed(2)} MXN).\n` +
       `Estatus en plataforma: ${order.status}.\n` +
       `¿Podrían confirmarme los detalles de entrega? ¡Muchas gracias!`;
 
@@ -138,7 +138,7 @@ export const ClienteOrders: React.FC = () => {
                   </div>
                   <div className="text-left sm:text-right">
                     <p className="text-sm sm:text-base font-bold text-[#1B1A18]">
-                      ${order.total.toFixed(2)} MXN
+                      ${(order.total ?? 0).toFixed(2)} MXN
                     </p>
                     <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900">
                       {order.status}
@@ -217,11 +217,11 @@ export const ClienteOrders: React.FC = () => {
 
                 {/* Items summary */}
                 <div className="p-3 bg-[#FAF8F5] rounded-2xl border border-stone-200/80 text-xs space-y-1">
-                  <p className="font-bold text-stone-700">Artículos ({order.items.length}):</p>
+                  <p className="font-bold text-stone-700">Artículos ({order.items?.length || 0}):</p>
                   <ul className="list-disc pl-4 text-stone-600 space-y-0.5">
-                    {order.items.map((item, idx) => (
+                    {(order.items || []).map((item, idx) => (
                       <li key={idx}>
-                        {item.productName} x{item.quantity} (${item.subtotal.toFixed(2)})
+                        {item.productName} x{item.quantity} (${(item.subtotal ?? 0).toFixed(2)})
                       </li>
                     ))}
                   </ul>
@@ -275,7 +275,7 @@ export const ClienteOrders: React.FC = () => {
                     #{order.orderNumber} • {new Date(order.createdAt).toLocaleDateString('es-MX')}
                   </p>
                   <p className="text-stone-500 text-[11px]">
-                    {order.items.length} productos • ${order.total.toFixed(2)} MXN
+                    {order.items?.length || 0} productos • ${(order.total ?? 0).toFixed(2)} MXN
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

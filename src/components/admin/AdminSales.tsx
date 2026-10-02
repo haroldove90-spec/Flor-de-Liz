@@ -158,12 +158,12 @@ export const AdminSales: React.FC = () => {
   const handleSendWhatsApp = (order: Order) => {
     const rawPhone = order.clientWhatsapp || order.clientPhone || '';
     const cleanPhone = rawPhone.replace(/\D/g, '');
-    const itemsSummary = order.items.map((i) => `• ${i.quantity}x ${i.productName} ($${i.subtotal.toFixed(2)})`).join('\n');
+    const itemsSummary = (order.items || []).map((i) => `• ${i.quantity}x ${i.productName} ($${(i.subtotal ?? 0).toFixed(2)})`).join('\n');
     const message = `🌸 *ESTATUS DE VENTA - FLOR DE LIZ* 🌸\n\n` +
       `Estimado/a *${order.clientName}*,\n` +
       `Te compartimos el estatus de tu pedido con folio *#${order.orderNumber}*:\n\n` +
       `📋 *Estatus actual:* ${order.status}\n` +
-      `💰 *Total:* $${order.total.toFixed(2)} MXN\n\n` +
+      `💰 *Total:* $${(order.total ?? 0).toFixed(2)} MXN\n\n` +
       `*DETALLE:* \n${itemsSummary}\n\n` +
       `Cualquier duda o aclaración, estamos a tus órdenes en Comercializadora Flor De Liz.`;
 
@@ -486,9 +486,9 @@ export const AdminSales: React.FC = () => {
 
                       <td className="py-3 px-4">
                         <span className="font-bold text-[#1B1A18] text-sm">
-                          ${order.total.toFixed(2)} MXN
+                          ${(order.total ?? 0).toFixed(2)} MXN
                         </span>
-                        <p className="text-[10px] text-stone-400">{order.items.length} productos</p>
+                        <p className="text-[10px] text-stone-400">{order.items?.length || 0} productos</p>
                       </td>
 
                       <td className="py-3 px-4">
@@ -596,16 +596,16 @@ export const AdminSales: React.FC = () => {
               <div className="space-y-2">
                 <span className="font-bold text-stone-700">Productos del Pedido:</span>
                 <div className="divide-y divide-stone-100 border border-stone-200 rounded-xl overflow-hidden">
-                  {selectedOrder.items.map((item, idx) => (
+                  {(selectedOrder.items || []).map((item, idx) => (
                     <div key={idx} className="p-3 flex items-center justify-between bg-white">
                       <div>
                         <p className="font-bold text-stone-900">{item.productName}</p>
                         <p className="text-[11px] text-stone-500">
-                          {item.productCode} • Cantidad: {item.quantity} x ${item.price.toFixed(2)}
+                          {item.productCode || 'MED'} • Cantidad: {item.quantity} x ${(item.price ?? 0).toFixed(2)}
                           {item.discount > 0 && ` (-${item.discount}%)`}
                         </p>
                       </div>
-                      <span className="font-bold text-stone-900">${item.subtotal.toFixed(2)}</span>
+                      <span className="font-bold text-stone-900">${(item.subtotal ?? 0).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -613,14 +613,14 @@ export const AdminSales: React.FC = () => {
 
               {/* Totals */}
               <div className="p-3 bg-stone-50 rounded-xl space-y-1 text-right">
-                <p className="text-stone-600">Subtotal: ${selectedOrder.subtotal.toFixed(2)}</p>
+                <p className="text-stone-600">Subtotal: ${(selectedOrder.subtotal ?? 0).toFixed(2)}</p>
                 {selectedOrder.discountTotal > 0 && (
                   <p className="text-red-600 font-semibold">
-                    Descuento: -${selectedOrder.discountTotal.toFixed(2)}
+                    Descuento: -${(selectedOrder.discountTotal ?? 0).toFixed(2)}
                   </p>
                 )}
                 <p className="text-sm font-bold text-[#1B1A18] pt-1 border-t border-stone-200">
-                  Total: ${selectedOrder.total.toFixed(2)} MXN
+                  Total: ${(selectedOrder.total ?? 0).toFixed(2)} MXN
                 </p>
               </div>
 
@@ -739,7 +739,7 @@ export const AdminSales: React.FC = () => {
                     >
                       {products.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} (${p.price.toFixed(2)}) - Stock: {p.stock}
+                          {p.name} (${(p.price ?? 0).toFixed(2)}) - Stock: {p.stock ?? 0}
                         </option>
                       ))}
                     </select>

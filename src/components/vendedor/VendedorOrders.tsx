@@ -235,9 +235,9 @@ export const VendedorOrders: React.FC = () => {
 
                     <td className="py-3.5 px-4">
                       <span className="font-bold text-[#1B1A18] text-sm">
-                        ${order.total.toFixed(2)} MXN
+                        ${(order.total ?? 0).toFixed(2)} MXN
                       </span>
-                      <p className="text-[10px] text-stone-400">{order.items.length} productos</p>
+                      <p className="text-[10px] text-stone-400">{order.items?.length || 0} productos</p>
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -400,7 +400,7 @@ export const VendedorOrders: React.FC = () => {
                     >
                       {products.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} (${p.price.toFixed(2)}) - Stock: {p.stock}
+                          {p.name} (${(p.price ?? 0).toFixed(2)}) - Stock: {p.stock ?? 0}
                         </option>
                       ))}
                     </select>
@@ -493,23 +493,23 @@ export const VendedorOrders: React.FC = () => {
 
               {/* Items */}
               <div className="border border-stone-200 rounded-xl overflow-hidden divide-y divide-stone-100">
-                {selectedOrder.items.map((item, idx) => (
+                {(selectedOrder.items || []).map((item, idx) => (
                   <div key={idx} className="p-3 flex items-center justify-between">
                     <div>
                       <p className="font-bold">{item.productName}</p>
                       <p className="text-[11px] text-stone-500">
-                        SKU: {item.productCode} • Cantidad: {item.quantity} x ${item.price.toFixed(2)}
+                        SKU: {item.productCode || 'MED'} • Cantidad: {item.quantity} x ${(item.price ?? 0).toFixed(2)}
                       </p>
                     </div>
-                    <span className="font-bold">${item.subtotal.toFixed(2)}</span>
+                    <span className="font-bold">${(item.subtotal ?? 0).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
 
               <div className="p-3 bg-stone-50 rounded-xl text-right space-y-1">
-                <p className="text-stone-600">Subtotal: ${selectedOrder.subtotal.toFixed(2)}</p>
+                <p className="text-stone-600">Subtotal: ${(selectedOrder.subtotal ?? 0).toFixed(2)}</p>
                 <p className="text-base font-bold text-[#1B1A18]">
-                  Total: ${selectedOrder.total.toFixed(2)} MXN
+                  Total: ${(selectedOrder.total ?? 0).toFixed(2)} MXN
                 </p>
               </div>
 
@@ -546,7 +546,7 @@ export const VendedorOrders: React.FC = () => {
             <div>
               <h3 className="text-lg font-bold text-[#1B1A18]">¡Pedido Guardado en Historial!</h3>
               <p className="text-xs text-stone-500 mt-0.5">
-                Folio oficial: <strong className="text-[#1B1A18]">#{createdSuccessOrder.orderNumber}</strong> • Total: <strong>${createdSuccessOrder.total.toFixed(2)} MXN</strong>
+                Folio oficial: <strong className="text-[#1B1A18]">#{createdSuccessOrder.orderNumber}</strong> • Total: <strong>${(createdSuccessOrder.total ?? 0).toFixed(2)} MXN</strong>
               </p>
             </div>
 

@@ -1146,7 +1146,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Orders
   const [orders, setOrders] = useState<Order[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ORDERS);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map((o: any) => ({
+            ...o,
+            subtotal: Number(o.subtotal || 0),
+            discountTotal: Number(o.discountTotal || 0),
+            total: Number(o.total || 0),
+            items: Array.isArray(o.items)
+              ? o.items.map((it: any) => {
+                  const price = Number(it.price ?? it.unitPrice ?? it.unit_price ?? 0);
+                  const qty = Number(it.quantity || 1);
+                  const disc = Number(it.discount || 0);
+                  const sub = Number(it.subtotal ?? (price * (1 - disc / 100) * qty));
+                  return {
+                    productId: String(it.productId || it.product_id || it.id || ''),
+                    productName: String(it.productName || it.product_name || it.name || 'Producto'),
+                    productCode: String(it.productCode || it.product_code || it.code || 'MED-0000'),
+                    price: isNaN(price) ? 0 : price,
+                    quantity: isNaN(qty) ? 1 : qty,
+                    discount: isNaN(disc) ? 0 : disc,
+                    subtotal: isNaN(sub) ? 0 : sub,
+                    imageUrl: String(it.imageUrl || it.image_url || ''),
+                  };
+                })
+              : [],
+          }));
+        }
+      } catch {}
+    }
     return INITIAL_ORDERS;
   });
 
@@ -2364,27 +2394,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (res.ok) {
         const rows: Record<string, unknown>[] = await res.json();
         if (rows && rows.length > 0) {
-          const loaded: Order[] = rows.map((r) => ({
-            id: String(r.id),
-            orderNumber: String(r.order_number),
-            clientId: String(r.client_id || ''),
-            clientName: String(r.client_name || 'Cliente'),
-            clientBusiness: String(r.client_business || ''),
-            clientPhone: String(r.client_phone || ''),
-            clientWhatsapp: String(r.client_whatsapp || ''),
-            clientAddress: String(r.client_address || ''),
-            items: (r.items as OrderItem[]) || [],
-            subtotal: Number(r.subtotal) || 0,
-            discountTotal: Number(r.discount_total) || 0,
-            total: Number(r.total) || 0,
-            status: (r.status as OrderStatus) || 'En proceso',
-            vendedorId: String(r.vendedor_id || ''),
-            vendedorName: String(r.vendedor_name || ''),
-            notes: String(r.notes || ''),
-            source: (r.source as any) || 'vendedor',
-            createdAt: String(r.created_at || new Date().toISOString()),
-            updatedAt: String(r.updated_at || new Date().toISOString()),
-          }));
+          const loaded: Order[] = rows.map((r) => {
+            const rawItems = Array.isArray(r.items)
+              ? r.items
+              : (typeof r.items === 'string' ? JSON.parse(r.items || '[]') : []);
+
+            const mappedItems: OrderItem[] = (rawItems || []).map((it: any) => {
+              const price = Number(it.price ?? it.unitPrice ?? it.unit_price ?? 0);
+              const quantity = Number(it.quantity || 1);
+              const discount = Number(it.discount || 0);
+              const subtotal = Number(it.subtotal ?? (price * (1 - discount / 100) * quantity));
+              return {
+                productId: String(it.productId || it.product_id || it.id || ''),
+                productName: String(it.productName || it.product_name || it.name || 'Producto'),
+                productCode: String(it.productCode || it.product_code || it.code || 'MED-0000'),
+                price: isNaN(price) ? 0 : price,
+                quantity: isNaN(quantity) ? 1 : quantity,
+                discount: isNaN(discount) ? 0 : discount,
+                subtotal: isNaN(subtotal) ? 0 : subtotal,
+                imageUrl: String(it.imageUrl || it.image_url || ''),
+              };
+            });
+
+            return {
+              id: String(r.id),
+              orderNumber: String(r.order_number),
+              clientId: String(r.client_id || ''),
+              clientName: String(r.client_name || 'Cliente'),
+              clientBusiness: String(r.client_business || ''),
+              clientPhone: String(r.client_phone || ''),
+              clientWhatsapp: String(r.client_whatsapp || ''),
+              clientAddress: String(r.client_address || ''),
+              items: mappedItems,
+              subtotal: Number(r.subtotal) || 0,
+              discountTotal: Number(r.discount_total) || 0,
+              total: Number(r.total) || 0,
+              status: (r.status as OrderStatus) || 'En proceso',
+              vendedorId: String(r.vendedor_id || ''),
+              vendedorName: String(r.vendedor_name || ''),
+              notes: String(r.notes || ''),
+              source: (r.source as any) || 'vendedor',
+              createdAt: String(r.created_at || new Date().toISOString()),
+              updatedAt: String(r.updated_at || new Date().toISOString()),
+            };
+          });
           setOrders(loaded);
           return { success: true, count: loaded.length, message: `${loaded.length} pedidos cargados desde Supabase.` };
         }

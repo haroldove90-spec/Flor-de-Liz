@@ -151,7 +151,7 @@ export const VendedorMetrics: React.FC = () => {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-[#1B1A18]">${o.total.toFixed(2)} MXN</p>
+                  <p className="font-bold text-[#1B1A18]">${(o.total ?? 0).toFixed(2)} MXN</p>
                   <span className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-200 text-stone-700">
                     {o.status}
                   </span>
