@@ -6,16 +6,18 @@ import {
   Eye,
   Search,
   CheckCircle,
+  CheckCircle2,
   Clock,
   Truck,
   XCircle,
   X,
   User,
   Trash2,
+  MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Order, OrderStatus } from '../../types';
-import { exportOrderPDF } from '../../utils/pdfExport';
+import { exportOrderPDF, createWhatsAppOrderLink } from '../../utils/pdfExport';
 
 export const VendedorOrders: React.FC = () => {
   const {
@@ -25,11 +27,13 @@ export const VendedorOrders: React.FC = () => {
     createOrder,
     updateOrderStatus,
     vendedorProfile,
+    currentUser,
     addClient,
   } = useApp();
 
   const [search, setSearch] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [createdSuccessOrder, setCreatedSuccessOrder] = useState<Order | null>(null);
 
   // New order modal
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
@@ -44,9 +48,13 @@ export const VendedorOrders: React.FC = () => {
   ]);
   const [orderNotes, setOrderNotes] = useState('');
 
-  // Vendor's orders
+  // Vendor's isolated orders: only this vendor's sales
   const myOrders = orders.filter(
-    (o) => o.vendedorId === vendedorProfile.id || o.vendedorName === vendedorProfile.name
+    (o) =>
+      o.vendedorId === vendedorProfile.id ||
+      (currentUser?.id && o.vendedorId === currentUser.id) ||
+      o.vendedorName === vendedorProfile.name ||
+      (currentUser?.name && o.vendedorName === currentUser.name)
   );
 
   const filteredOrders = myOrders.filter(
@@ -149,7 +157,7 @@ export const VendedorOrders: React.FC = () => {
     });
 
     setShowNewOrderModal(false);
-    setSelectedOrder(createdOrder);
+    setCreatedSuccessOrder(createdOrder);
     setOrderNotes('');
   };
 
@@ -242,7 +250,17 @@ export const VendedorOrders: React.FC = () => {
                       </span>
                     </td>
 
-                    <td className="py-3.5 px-4 text-right space-x-2 whitespace-nowrap">
+                    <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
+                      {/* WhatsApp al cliente */}
+                      <button
+                        onClick={() => window.open(createWhatsAppOrderLink(order), '_blank')}
+                        className="py-1 px-2.5 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs transition cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                        title="Enviar detalle del pedido por WhatsApp al cliente"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="hidden sm:inline">WhatsApp</span>
+                      </button>
+
                       <button
                         onClick={() => setSelectedOrder(order)}
                         className="p-1.5 rounded-lg border border-stone-200 hover:bg-stone-100 text-stone-600 transition cursor-pointer"
@@ -495,15 +513,78 @@ export const VendedorOrders: React.FC = () => {
                 </p>
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2.5">
+              <div className="pt-2 flex flex-wrap items-center justify-end gap-2.5">
+                <button
+                  onClick={() => window.open(createWhatsAppOrderLink(selectedOrder), '_blank')}
+                  className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Compartir por WhatsApp al Cliente
+                </button>
+
                 <button
                   onClick={() => exportOrderPDF(selectedOrder)}
-                  className="py-2.5 px-4 rounded-xl bg-[#1B1A18] text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  className="py-2.5 px-4 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
                 >
                   <FileText className="w-3.5 h-3.5 text-[#C9B368]" />
                   Descargar PDF
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Pedido Creado y Compartir Inmediato */}
+      {createdSuccessOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-stone-200 overflow-hidden text-[#1B1A18] p-6 text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold text-[#1B1A18]">¡Pedido Guardado en Historial!</h3>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Folio oficial: <strong className="text-[#1B1A18]">#{createdSuccessOrder.orderNumber}</strong> • Total: <strong>${createdSuccessOrder.total.toFixed(2)} MXN</strong>
+              </p>
+            </div>
+
+            <div className="p-3.5 bg-[#FAF8F5] rounded-2xl border border-stone-200 text-left text-xs space-y-1">
+              <p><strong>Cliente:</strong> {createdSuccessOrder.clientName}</p>
+              {createdSuccessOrder.clientBusiness && <p><strong>Negocio:</strong> {createdSuccessOrder.clientBusiness}</p>}
+              <p><strong>WhatsApp:</strong> {createdSuccessOrder.clientWhatsapp}</p>
+              <p><strong>Productos:</strong> {createdSuccessOrder.items.length} artículos</p>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={() => {
+                  window.open(createWhatsAppOrderLink(createdSuccessOrder), '_blank');
+                }}
+                className="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer active:scale-98"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>Compartir Pedido por WhatsApp al Cliente</span>
+              </button>
+
+              <button
+                onClick={() => exportOrderPDF(createdSuccessOrder)}
+                className="w-full py-2.5 px-4 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-[#C9B368] font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Descargar Comprobante PDF</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setSelectedOrder(createdSuccessOrder);
+                  setCreatedSuccessOrder(null);
+                }}
+                className="text-xs text-stone-500 hover:underline pt-1 cursor-pointer block mx-auto"
+              >
+                Ver detalle completo en pantalla
+              </button>
             </div>
           </div>
         </div>

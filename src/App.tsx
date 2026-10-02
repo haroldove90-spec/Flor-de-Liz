@@ -59,6 +59,8 @@ const MainLayout: React.FC = () => {
           return <AdminCatalog />;
         case 'ventas':
           return <AdminSales />;
+        case 'clientes':
+          return <VendedorClients />;
         case 'empleados':
           return <AdminEmployees />;
         case 'notificaciones':

@@ -84,6 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           { id: 'metricas', label: 'Métricas Generales', icon: BarChart3, desc: 'Ventas, KPIs y balance' },
           { id: 'catalogo', label: 'Catálogo de Productos', icon: Package, desc: 'Inventario, precios y stock' },
           { id: 'ventas', label: 'Historial de Ventas', icon: ShoppingCart, desc: 'Pedidos y exportación PDF' },
+          { id: 'clientes', label: 'Registro de Clientes', icon: UserCheck, desc: 'Directorio y credenciales' },
           { id: 'empleados', label: 'Gestión de Empleados', icon: Users, desc: 'Vendedores y credenciales' },
           { id: 'notificaciones', label: 'Avisos y Alertas', icon: Bell, desc: 'Nuevos pedidos y estados' },
           { id: 'perfil', label: 'Perfil de Administrador', icon: User, desc: 'Datos de la empresa y contacto' },

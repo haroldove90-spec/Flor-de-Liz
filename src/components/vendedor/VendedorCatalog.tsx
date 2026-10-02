@@ -34,10 +34,14 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
   }, [products]);
 
   const filtered = products.filter((p) => {
+    const term = search.toLowerCase().trim();
     const matchesSearch =
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.code.toLowerCase().includes(search.toLowerCase()) ||
-      p.description.toLowerCase().includes(search.toLowerCase());
+      !term ||
+      p.name.toLowerCase().includes(term) ||
+      p.code.toLowerCase().includes(term) ||
+      p.category.toLowerCase().includes(term) ||
+      (p.subCategory && p.subCategory.toLowerCase().includes(term)) ||
+      p.description.toLowerCase().includes(term);
     const matchesCat = selectedCategory === 'all' || p.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
@@ -178,9 +182,16 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
                   </div>
 
                   <div className="p-2.5 sm:p-4 space-y-1 sm:space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-stone-500">
-                      <span className="truncate max-w-[85px] sm:max-w-[130px] font-medium">{prod.category}</span>
-                      <span className={prod.stock < 5 ? 'text-red-600 font-bold' : ''}>
+                    <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                      <span className="truncate max-w-[85px] sm:max-w-[120px] font-semibold text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded">
+                        {prod.category}
+                      </span>
+                      {prod.subCategory && (
+                        <span className="truncate max-w-[85px] sm:max-w-[120px] font-bold text-[#1B1A18] bg-[#C9B368]/20 px-1.5 py-0.5 rounded">
+                          {prod.subCategory}
+                        </span>
+                      )}
+                      <span className={`ml-auto ${prod.stock < 5 ? 'text-red-600 font-bold' : 'text-stone-400 font-medium'}`}>
                         {prod.stock} disp.
                       </span>
                     </div>

@@ -15,6 +15,7 @@ export const downloadMedicalExcelTemplate = () => {
       'Código SKU': '008.3',
       'Nombre / Descripción': 'AGUJA NIPRO HIPODERMICA 16 G * 1 1/2" MORADA',
       'Categoría': 'Agujas',
+      'Subcategoría': 'Hipodérmicas',
       'Precio ($ MXN)': 1.98,
       'Stock': 100,
       'Descuento (%)': 0,
@@ -25,6 +26,7 @@ export const downloadMedicalExcelTemplate = () => {
       'Código SKU': '011',
       'Nombre / Descripción': 'ALCOHOL LOURDES DESNAT. 70° 125 ML',
       'Categoría': 'Alcohol',
+      'Subcategoría': 'Desnaturalizado',
       'Precio ($ MXN)': 7.96,
       'Stock': 80,
       'Descuento (%)': 0,
@@ -35,6 +37,7 @@ export const downloadMedicalExcelTemplate = () => {
       'Código SKU': '0661',
       'Nombre / Descripción': 'GASA DIBAR 10 X 10 C/100',
       'Categoría': 'Gasas',
+      'Subcategoría': 'Esterilizadas',
       'Precio ($ MXN)': 147.00,
       'Stock': 50,
       'Descuento (%)': 0,
@@ -45,6 +48,7 @@ export const downloadMedicalExcelTemplate = () => {
       'Código SKU': '580',
       'Nombre / Descripción': 'JERINGA NIPRO 3 ML VERDE',
       'Categoría': 'Jeringas',
+      'Subcategoría': 'Desechables 3ml',
       'Precio ($ MXN)': 2.33,
       'Stock': 200,
       'Descuento (%)': 0,
@@ -140,6 +144,22 @@ export const parseRawMedicalPriceList = (rawContent: string): Product[] => {
       code = `MED-${(products.length + 1).toString().padStart(4, '0')}`;
     }
 
+    let mainCat = currentCategory;
+    let subCat = '';
+    if (mainCat.includes('/')) {
+      const parts = mainCat.split('/');
+      mainCat = cleanTextEncoding(parts[0]);
+      subCat = cleanTextEncoding(parts[1]);
+    } else if (mainCat.includes(' - ')) {
+      const parts = mainCat.split(' - ');
+      mainCat = cleanTextEncoding(parts[0]);
+      subCat = cleanTextEncoding(parts[1]);
+    } else if (mainCat.includes('>')) {
+      const parts = mainCat.split('>');
+      mainCat = cleanTextEncoding(parts[0]);
+      subCat = cleanTextEncoding(parts[1]);
+    }
+
     products.push({
       id: `prod_med_${Date.now()}_${products.length + 1}_${Math.random().toString(36).substring(2, 6)}`,
       name,
@@ -147,9 +167,10 @@ export const parseRawMedicalPriceList = (rawContent: string): Product[] => {
       price,
       stock: 50, // Standard default stock
       discount: 0,
-      description: `Material de curación y suministro médico especializado de alta calidad. Categoría: ${currentCategory}.`,
-      category: currentCategory,
-      imageUrl: getPlaceholderImageForCategory(currentCategory),
+      description: `Material de curación y suministro médico especializado de alta calidad. Categoría: ${mainCat}${subCat ? ` • Subcategoría: ${subCat}` : ''}.`,
+      category: mainCat,
+      subCategory: subCat || undefined,
+      imageUrl: getPlaceholderImageForCategory(mainCat),
       createdAt: new Date().toISOString(),
     });
   }
@@ -226,7 +247,20 @@ export const parseExcelProducts = async (file: File): Promise<Product[]> => {
           const stock = Number(getVal(['stock', 'existencia', 'cantidad', 'inventario']) || 50);
           const discount = Number(getVal(['descuento', 'discount']) || 0);
           const description = cleanTextEncoding(String(getVal(['característica', 'caracteristicas', 'descripcion', 'detalle']) || 'Material de curación y suministros médicos.'));
-          const category = cleanTextEncoding(String(getVal(['categoría', 'categoria', 'tipo', 'linea']) || 'Suministros Médicos'));
+          
+          let category = cleanTextEncoding(String(getVal(['categoría', 'categoria', 'tipo', 'linea', 'grupo']) || 'Suministros Médicos'));
+          let subCategory = cleanTextEncoding(String(getVal(['subcategoría', 'subcategoria', 'subgrupo', 'subclase', 'sub', 'marca', 'presentacion']) || ''));
+
+          if (!subCategory && category.includes('/')) {
+            const parts = category.split('/');
+            category = cleanTextEncoding(parts[0]);
+            subCategory = cleanTextEncoding(parts[1]);
+          } else if (!subCategory && category.includes(' - ')) {
+            const parts = category.split(' - ');
+            category = cleanTextEncoding(parts[0]);
+            subCategory = cleanTextEncoding(parts[1]);
+          }
+
           const imageUrl = String(getVal(['imagen', 'url', 'foto', 'image']) || getPlaceholderImageForCategory(category));
 
           return {
@@ -238,6 +272,7 @@ export const parseExcelProducts = async (file: File): Promise<Product[]> => {
             discount: isNaN(discount) ? 0 : Math.min(100, Math.max(0, discount)),
             description,
             category,
+            subCategory: subCategory || undefined,
             imageUrl,
             createdAt: new Date().toISOString(),
           };
@@ -267,6 +302,7 @@ export const exportProductsToExcel = (products: Product[], filename?: string) =>
       'Código / SKU': p.code,
       'Nombre del Producto': p.name,
       'Categoría': p.category || 'Suministros Médicos',
+      'Subcategoría': p.subCategory || '',
       'Precio Lista ($ MXN)': Number(p.price.toFixed(2)),
       'Descuento (%)': discount,
       'Precio Final ($ MXN)': Number(finalPrice.toFixed(2)),

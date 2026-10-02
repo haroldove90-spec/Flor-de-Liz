@@ -35,19 +35,19 @@ export const FloatingNotificationBanner: React.FC = () => {
 
     const timer = setInterval(() => {
       if (!isPaused) {
-        setProgress((prev) => {
-          if (prev <= step) {
-            clearInterval(timer);
-            dismissFloatingNotification();
-            return 0;
-          }
-          return prev - step;
-        });
+        setProgress((prev) => Math.max(0, prev - step));
       }
     }, intervalTime);
 
     return () => clearInterval(timer);
-  }, [floatingNotification, isPaused, dismissFloatingNotification]);
+  }, [floatingNotification, isPaused]);
+
+  // Safely dismiss when progress finishes without calling setState inside render/updater
+  useEffect(() => {
+    if (progress <= 0 && floatingNotification) {
+      dismissFloatingNotification();
+    }
+  }, [progress, floatingNotification, dismissFloatingNotification]);
 
   if (!floatingNotification) return null;
 

@@ -60,6 +60,8 @@ interface AppContextType {
   addClient: (client: Omit<Client, 'id' | 'createdAt'>) => Client;
   updateClient: (id: string, client: Partial<Client>) => void;
   deleteClient: (id: string) => void;
+  deleteMultipleClients: (ids: string[]) => Promise<{ success: boolean; count: number; message: string }>;
+  deleteAllClients: () => Promise<{ success: boolean; count: number; message: string }>;
   toggleClientActive: (id: string) => void;
   fetchClientsFromSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
 
@@ -80,6 +82,8 @@ interface AppContextType {
   }) => Order;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
   deleteOrder: (orderId: string) => void;
+  deleteMultipleOrders: (ids: string[]) => Promise<{ success: boolean; count: number; message: string }>;
+  deleteAllOrders: () => Promise<{ success: boolean; count: number; message: string }>;
   fetchOrdersFromSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
 
   // Employees
@@ -87,6 +91,8 @@ interface AppContextType {
   addEmployee: (employee: Omit<Employee, 'id' | 'createdAt'>) => Promise<{ success: boolean; employee: Employee; message: string }>;
   updateEmployee: (id: string, employee: Partial<Employee>) => Promise<{ success: boolean; message: string }>;
   deleteEmployee: (id: string) => Promise<{ success: boolean; message: string }>;
+  deleteMultipleEmployees: (ids: string[]) => Promise<{ success: boolean; count: number; message: string }>;
+  deleteAllEmployees: () => Promise<{ success: boolean; count: number; message: string }>;
   fetchEmployeesFromSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
   uploadEmployeesToSupabase: () => Promise<{ success: boolean; count: number; message: string }>;
 
@@ -95,6 +101,8 @@ interface AppContextType {
   addNotification: (notification: Omit<NotificationItem, 'id' | 'createdAt' | 'read'>) => void;
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsAsRead: (role?: UserRole) => void;
+  deleteNotification: (id: string) => Promise<void>;
+  clearAllNotifications: (role?: UserRole) => Promise<void>;
   floatingNotification: NotificationItem | null;
   dismissFloatingNotification: () => void;
   playNotificationSound: () => void;
@@ -151,10 +159,10 @@ const STORAGE_KEYS = {
 
 // USER CONFIGURATION FOR SUPABASE
 const DEFAULT_SUPABASE_CONFIG: SupabaseConfig = {
-  url: 'https://ylzgfsvcibqsztarglja.supabase.co/rest/v1/',
-  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlsemdmc3ZjaWJxc3p0YXJnbGphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4MDU2NDksImV4cCI6MjEwNjM4MTY0OX0.020w8ie-1aNgSgGrdjza_Ty-UxWJuXU4NWmaaGx1R_o',
+  url: 'https://ptzdzlafekxtakbfnyur.supabase.co/rest/v1/',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0emR6bGFmZWt4dGFrYmZueXVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NzM4MDUsImV4cCI6MjEwNjU0OTgwNX0.LKcMnCzb4vIHyqbUlIxqRSCHX5Oq267LY1JHe4RmsMA',
   connected: true,
-  projectId: 'ylzgfsvcibqsztarglja',
+  projectId: 'ptzdzlafekxtakbfnyur',
   projectName: "flordeliz@appdesignsoftware.com's Project",
 };
 
@@ -263,7 +271,7 @@ const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   {
     id: 'notif_init_1',
     title: 'Sistema Conectado a Supabase',
-    message: 'Proyecto ylzgfsvcibqsztarglja configurado y listo para sincronizar catálogo de suministros médicos.',
+    message: 'Proyecto ptzdzlafekxtakbfnyur configurado y listo para sincronizar catálogo de suministros médicos.',
     type: 'system',
     targetRole: 'admin',
     read: false,
@@ -640,9 +648,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true, message: `Bienvenido, ${matchedEmployee.name}`, user: empUser };
     }
 
+    // 4. Check registered clients in system
+    const matchedClient = clients.find((c) => {
+      const cUser = (c.username || c.email || '').toLowerCase().trim();
+      const cPass = c.password || '';
+      const cPhone = (c.phone || '').replace(/\D/g, '');
+      const cWhatsapp = (c.whatsapp || '').replace(/\D/g, '');
+
+      if (rawUser && rawPass) {
+        if ((cUser === rawUser || cPhone === rawUser || cWhatsapp === rawUser) && cPass === rawPass) {
+          return true;
+        }
+      }
+      if (rawUser && !rawPass) {
+        if (cUser === rawUser || cPhone === rawUser || cWhatsapp === rawUser) return true;
+      }
+      if (rawPass && !rawUser) {
+        if (cPass === rawPass) return true;
+      }
+      return false;
+    });
+
+    if (matchedClient) {
+      const clientAuth: AuthUser = {
+        id: matchedClient.id,
+        username: matchedClient.username || matchedClient.name,
+        name: matchedClient.name,
+        role: 'cliente',
+        isAdmin: false,
+        email: matchedClient.email,
+        phone: matchedClient.phone,
+        whatsapp: matchedClient.whatsapp,
+        businessName: matchedClient.businessName,
+      };
+      setCurrentUser(clientAuth);
+      setActiveRoleState('cliente');
+      setActiveTabState('catalogo');
+      localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(clientAuth));
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_ROLE, 'cliente');
+
+      setClienteProfile((prev) => ({
+        ...prev,
+        id: matchedClient.id,
+        name: matchedClient.name,
+        businessName: matchedClient.businessName,
+        phone: matchedClient.phone,
+        whatsapp: matchedClient.whatsapp,
+        email: matchedClient.email || prev.email,
+        address: matchedClient.address || prev.address,
+      }));
+
+      addNotification({
+        title: `¡Bienvenido ${matchedClient.name}!`,
+        message: 'Acceso autorizado como Cliente. Consulta nuestro catálogo en línea y realiza tus pedidos médicos.',
+        type: 'system',
+        targetRole: 'cliente',
+        module: 'catalogo',
+      });
+
+      return { success: true, message: `Bienvenido, ${matchedClient.name}`, user: clientAuth };
+    }
+
     return {
       success: false,
-      message: 'Credenciales inválidas. Verifica tu usuario y/o contraseña (ej. emilio_admin o haroldo90).',
+      message: 'Credenciales inválidas. Verifica tu usuario y/o contraseña (ej. emilio_admin, haroldo90 o tu usuario de cliente).',
     };
   };
 
@@ -719,7 +788,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.projectId === 'ylzgfsvcibqsztarglja') return parsed;
+        if (parsed.projectId === 'ptzdzlafekxtakbfnyur') return parsed;
       } catch {
         // use default
       }
@@ -1455,7 +1524,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Save to Supabase
     try {
       const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
-      await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+      const res = await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
         method: 'POST',
         headers: {
           apikey: supabaseConfig.anonKey,
@@ -1472,10 +1541,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           discount: newProd.discount,
           description: newProd.description,
           category: newProd.category,
+          sub_category: newProd.subCategory || '',
           image_url: newProd.imageUrl,
           created_at: newProd.createdAt,
         }]),
       });
+
+      if (!res.ok) {
+        // Fallback compatibility with pre-migration column names
+        await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+          method: 'POST',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates',
+          },
+          body: JSON.stringify([{
+            id: newProd.id,
+            name: newProd.name,
+            category: newProd.category,
+            code: newProd.code,
+            description: newProd.description,
+            sale_price: newProd.price,
+            current_stock: newProd.stock,
+            photo_url: newProd.imageUrl,
+          }]),
+        });
+      }
       setSupabaseProductsCount((prev) => (prev !== null ? prev + 1 : 1));
     } catch (err) {
       console.warn('Background sync addProduct failed:', err);
@@ -1496,9 +1589,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (updated.discount !== undefined) payload.discount = updated.discount;
       if (updated.description !== undefined) payload.description = updated.description;
       if (updated.category !== undefined) payload.category = updated.category;
+      if (updated.subCategory !== undefined) payload.sub_category = updated.subCategory;
       if (updated.imageUrl !== undefined) payload.image_url = updated.imageUrl;
 
-      await fetch(`${cleanUrl}/flor_products?id=eq.${id}`, {
+      const res = await fetch(`${cleanUrl}/flor_products?id=eq.${id}`, {
         method: 'PATCH',
         headers: {
           apikey: supabaseConfig.anonKey,
@@ -1507,6 +1601,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
         body: JSON.stringify(payload),
       });
+
+      if (!res.ok) {
+        const compatPayload: Record<string, unknown> = {};
+        if (updated.name !== undefined) compatPayload.name = updated.name;
+        if (updated.code !== undefined) compatPayload.code = updated.code;
+        if (updated.price !== undefined) compatPayload.sale_price = updated.price;
+        if (updated.stock !== undefined) compatPayload.current_stock = updated.stock;
+        if (updated.description !== undefined) compatPayload.description = updated.description;
+        if (updated.category !== undefined) compatPayload.category = updated.category;
+        if (updated.imageUrl !== undefined) compatPayload.photo_url = updated.imageUrl;
+        await fetch(`${cleanUrl}/flor_products?id=eq.${id}`, {
+          method: 'PATCH',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(compatPayload),
+        });
+      }
     } catch (err) {
       console.warn('Background sync updateProduct failed:', err);
     }
@@ -1695,9 +1809,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Client Operations with Supabase Sync
   const addClient = (clientData: Omit<Client, 'id' | 'createdAt'>): Client => {
+    const rawCleanPhone = (clientData.phone || clientData.whatsapp || '').replace(/\D/g, '');
+    const cleanLast4 = rawCleanPhone.slice(-4) || Math.floor(1000 + Math.random() * 9000).toString();
+    const defaultUser = clientData.username?.trim() || `cliente.${cleanLast4}`;
+    const defaultPass = clientData.password?.trim() || 'Cliente#2026';
+
     const newClient: Client = {
       ...clientData,
       id: `cli_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      username: defaultUser,
+      password: defaultPass,
       createdAt: new Date().toISOString(),
     };
     setClients((prev) => [newClient, ...prev]);
@@ -1721,6 +1842,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           phone: newClient.phone || '',
           whatsapp: newClient.whatsapp || '',
           email: newClient.email || '',
+          username: newClient.username,
+          password: newClient.password,
           active: newClient.active !== false,
           notes: newClient.notes || '',
           created_at: newClient.createdAt,
@@ -1762,6 +1885,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             phone: clientToUpdate.phone || '',
             whatsapp: clientToUpdate.whatsapp || '',
             email: clientToUpdate.email || '',
+            username: clientToUpdate.username || '',
+            password: clientToUpdate.password || '',
             active: clientToUpdate.active !== false,
             notes: clientToUpdate.notes || '',
           }),
@@ -1785,6 +1910,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }).catch(() => {});
     } catch {
       // Handled silently
+    }
+  };
+
+  const deleteMultipleClients = async (ids: string[]): Promise<{ success: boolean; count: number; message: string }> => {
+    if (ids.length === 0) return { success: false, count: 0, message: 'Ningún cliente seleccionado.' };
+    const idSet = new Set(ids);
+    setClients((prev) => prev.filter((c) => !idSet.has(c.id)));
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const encodedIds = ids.map((id) => encodeURIComponent(id)).join(',');
+      await fetch(`${cleanUrl}/flor_clients?id=in.(${encodedIds})`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      return { success: true, count: ids.length, message: `Se eliminaron ${ids.length} clientes de Supabase.` };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count: ids.length, message: `Eliminados localmente. Error en Supabase: ${msg}` };
+    }
+  };
+
+  const deleteAllClients = async (): Promise<{ success: boolean; count: number; message: string }> => {
+    const count = clients.length;
+    setClients([]);
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      await fetch(`${cleanUrl}/flor_clients?id=neq.none`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      return { success: true, count, message: `Se eliminaron todos los clientes (${count} registros) de Supabase.` };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count, message: `Eliminados localmente. Error en Supabase: ${msg}` };
     }
   };
 
@@ -1825,6 +1990,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             phone: String(r.phone || ''),
             whatsapp: String(r.whatsapp || ''),
             email: String(r.email || ''),
+            username: r.username ? String(r.username) : undefined,
+            password: r.password ? String(r.password) : undefined,
             active: r.active !== false,
             notes: String(r.notes || ''),
             createdAt: String(r.created_at || new Date().toISOString()),
@@ -2142,6 +2309,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const deleteMultipleOrders = async (ids: string[]): Promise<{ success: boolean; count: number; message: string }> => {
+    if (ids.length === 0) return { success: false, count: 0, message: 'Ninguna orden seleccionada.' };
+    const idSet = new Set(ids);
+    setOrders((prev) => prev.filter((o) => !idSet.has(o.id)));
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const encodedIds = ids.map((id) => encodeURIComponent(id)).join(',');
+      await fetch(`${cleanUrl}/flor_orders?id=in.(${encodedIds})`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      return { success: true, count: ids.length, message: `Se eliminaron ${ids.length} órdenes de venta de Supabase.` };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count: ids.length, message: `Eliminadas localmente. Error en Supabase: ${msg}` };
+    }
+  };
+
+  const deleteAllOrders = async (): Promise<{ success: boolean; count: number; message: string }> => {
+    const count = orders.length;
+    setOrders([]);
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      await fetch(`${cleanUrl}/flor_orders?id=neq.none`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      return { success: true, count, message: `Se eliminaron todas las ventas (${count} registros) de Supabase.` };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count, message: `Eliminadas localmente. Error en Supabase: ${msg}` };
+    }
+  };
+
   const fetchOrdersFromSupabase = async (): Promise<{ success: boolean; count: number; message: string }> => {
     if (!supabaseConfig.url || !supabaseConfig.anonKey) {
       return { success: false, count: 0, message: 'Supabase no configurado' };
@@ -2343,6 +2550,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const deleteMultipleEmployees = async (ids: string[]): Promise<{ success: boolean; count: number; message: string }> => {
+    const currentUserId = currentUser?.id;
+    const safeIds = ids.filter((id) => id !== currentUserId && id !== 'user_emilio_admin' && !id.startsWith('profile_'));
+    if (safeIds.length === 0) return { success: false, count: 0, message: 'No se puede eliminar la cuenta principal de administrador.' };
+    const idSet = new Set(safeIds);
+    setEmployees((prev) => prev.filter((e) => !idSet.has(e.id)));
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const encodedIds = safeIds.map((id) => encodeURIComponent(id)).join(',');
+      await fetch(`${cleanUrl}/flor_employees?id=in.(${encodedIds})`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      });
+      return { success: true, count: safeIds.length, message: `Se eliminaron ${safeIds.length} empleados de Supabase.` };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count: safeIds.length, message: `Eliminados localmente. Error en Supabase: ${msg}` };
+    }
+  };
+
+  const deleteAllEmployees = async (): Promise<{ success: boolean; count: number; message: string }> => {
+    const currentUserId = currentUser?.id;
+    const toDelete = employees.filter((e) => e.id !== currentUserId && e.id !== 'user_emilio_admin' && !e.id.startsWith('profile_') && e.role !== 'admin');
+    const toDeleteIds = toDelete.map((e) => e.id);
+    const idSet = new Set(toDeleteIds);
+    setEmployees((prev) => prev.filter((e) => !idSet.has(e.id)));
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      if (toDeleteIds.length > 0) {
+        const encodedIds = toDeleteIds.map((id) => encodeURIComponent(id)).join(',');
+        await fetch(`${cleanUrl}/flor_employees?id=in.(${encodedIds})`, {
+          method: 'DELETE',
+          headers: {
+            apikey: supabaseConfig.anonKey,
+            Authorization: `Bearer ${supabaseConfig.anonKey}`,
+          },
+        });
+      }
+      return { success: true, count: toDeleteIds.length, message: `Se eliminaron los vendedores y asesores de Supabase (${toDeleteIds.length} registros).` };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
+      return { success: false, count: toDeleteIds.length, message: `Eliminados localmente: ${msg}` };
+    }
+  };
+
   const fetchEmployeesFromSupabase = async (): Promise<{ success: boolean; count: number; message: string }> => {
     if (!supabaseConfig.url || !supabaseConfig.anonKey) {
       return { success: false, count: 0, message: 'Supabase no configurado' };
@@ -2487,8 +2742,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setNotifications((prev) => [newNotif, ...prev]);
 
-    // Trigger floating notification banner
+    // Trigger floating notification banner and sound
     setFloatingNotification(newNotif);
+    playNotificationSound();
 
     // 3. Save notification to Supabase flor_notifications table
     try {
@@ -2529,6 +2785,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications((prev) =>
       prev.map((n) => (!role || n.targetRole === role ? { ...n, read: true } : n))
     );
+  };
+
+  const deleteNotification = async (id: string): Promise<void> => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      fetch(`${cleanUrl}/flor_notifications?id=eq.${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      }).catch(() => {});
+    } catch {
+      // Handled silently
+    }
+  };
+
+  const clearAllNotifications = async (role?: UserRole): Promise<void> => {
+    setNotifications((prev) => (role ? prev.filter((n) => n.targetRole !== role) : []));
+    try {
+      const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
+      const filter = role ? `target_role=eq.${encodeURIComponent(role)}` : 'id=neq.none';
+      fetch(`${cleanUrl}/flor_notifications?${filter}`, {
+        method: 'DELETE',
+        headers: {
+          apikey: supabaseConfig.anonKey,
+          Authorization: `Bearer ${supabaseConfig.anonKey}`,
+        },
+      }).catch(() => {});
+    } catch {
+      // Handled silently
+    }
   };
 
   const triggerTestNotification = (role: UserRole = 'admin', moduleName = 'pedidos') => {
@@ -2663,7 +2952,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       if (response.ok || response.status === 200 || response.status === 206) {
         setSupabaseConfig((prev) => ({ ...prev, connected: true }));
-        return { success: true, message: `¡Conexión verificada con éxito con el proyecto Supabase (${supabaseConfig.projectId || 'ylzgfsvcibqsztarglja'})!` };
+        return { success: true, message: `¡Conexión verificada con éxito con el proyecto Supabase (${supabaseConfig.projectId || 'ptzdzlafekxtakbfnyur'})!` };
       }
       return { success: false, message: `Respuesta del servidor Supabase: Código ${response.status}` };
     } catch (err: unknown) {
@@ -2722,6 +3011,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           discount: isNaN(Number(p.discount)) ? 0 : Math.min(100, Math.max(0, Number(p.discount))),
           description: p.description || 'Material de curación y suministros médicos.',
           category: p.category || 'Suministros Médicos',
+          sub_category: p.subCategory || '',
           image_url: p.imageUrl || '',
           created_at: p.createdAt || new Date().toISOString(),
         });
@@ -2748,8 +3038,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (res.ok) {
             totalSaved += chunk.length;
           } else {
-            // If the bulk batch fails, fall back to individual upserts so no valid record is missed!
-            for (const singleItem of chunk) {
+            // Check if batch succeeds with compatibility column names (sale_price, current_stock, photo_url)
+            const compatChunk = chunk.map((item) => ({
+              id: item.id,
+              code: item.code,
+              name: item.name,
+              category: item.category,
+              description: item.description,
+              sale_price: item.price,
+              current_stock: item.stock,
+              photo_url: item.image_url,
+            }));
+            const compatRes = await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+              method: 'POST',
+              headers: {
+                apikey: supabaseConfig.anonKey,
+                Authorization: `Bearer ${supabaseConfig.anonKey}`,
+                'Content-Type': 'application/json',
+                Prefer: 'resolution=merge-duplicates',
+              },
+              body: JSON.stringify(compatChunk),
+            });
+
+            if (compatRes.ok) {
+              totalSaved += chunk.length;
+            } else {
+              // If the bulk batch fails, fall back to individual upserts so no valid record is missed!
+              for (const singleItem of chunk) {
               try {
                 const singleRes = await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
                   method: 'POST',
@@ -2782,7 +3097,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               }
             }
           }
-        } catch (batchErr) {
+        }
+      } catch (batchErr) {
           console.error('Error uploading batch to Supabase:', batchErr);
         }
 
@@ -2843,12 +3159,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             id: String(item.id),
             code: String(item.code || ''),
             name: String(item.name || ''),
-            price: Number(item.price || 0),
-            stock: Number(item.stock || 50),
+            price: Number(item.price ?? item.sale_price ?? 0),
+            stock: Number(item.stock ?? item.current_stock ?? 50),
             discount: Number(item.discount || 0),
             description: String(item.description || ''),
-            category: String(item.category || 'General'),
-            imageUrl: String(item.image_url || ''),
+            category: String(item.category || 'Suministros Médicos'),
+            subCategory: item.sub_category ? String(item.sub_category) : undefined,
+            imageUrl: String(item.image_url ?? item.photo_url ?? ''),
             createdAt: String(item.created_at || new Date().toISOString()),
           }));
           setProducts(mapped);
@@ -2925,23 +3242,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addClient,
         updateClient,
         deleteClient,
+        deleteMultipleClients,
+        deleteAllClients,
         toggleClientActive,
         fetchClientsFromSupabase,
         orders,
         createOrder,
         updateOrderStatus,
         deleteOrder,
+        deleteMultipleOrders,
+        deleteAllOrders,
         fetchOrdersFromSupabase,
         employees,
         addEmployee,
         updateEmployee,
         deleteEmployee,
+        deleteMultipleEmployees,
+        deleteAllEmployees,
         fetchEmployeesFromSupabase,
         uploadEmployeesToSupabase,
         notifications,
         addNotification,
         markNotificationAsRead,
         markAllNotificationsAsRead,
+        deleteNotification,
+        clearAllNotifications,
         cart,
         addToCart,
         removeFromCart,

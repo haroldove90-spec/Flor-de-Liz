@@ -12,6 +12,7 @@ export interface Product {
   description: string;
   imageUrl: string;
   category: string;
+  subCategory?: string;
   createdAt: string;
 }
 
@@ -24,6 +25,8 @@ export interface Client {
   phone: string;
   whatsapp: string;
   email?: string;
+  username?: string;
+  password?: string;
   active: boolean;
   notes?: string;
   createdAt: string;
@@ -107,7 +110,7 @@ export interface AuthUser {
   username: string;
   password?: string;
   name: string;
-  role: 'admin' | 'vendedor';
+  role: UserRole;
   isAdmin: boolean;
   email?: string;
   phone?: string;

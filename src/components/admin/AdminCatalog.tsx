@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   Package,
   Plus,
@@ -22,6 +22,11 @@ import {
   Square,
   AlertTriangle,
   Loader2,
+  LayoutGrid,
+  FolderTree,
+  ChevronDown,
+  ChevronRight,
+  Layers,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Product } from '../../types';
@@ -66,6 +71,11 @@ export const AdminCatalog: React.FC = () => {
   const [discount, setDiscount] = useState<number | ''>(0);
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Agujas y Jeringas');
+  const [subCategory, setSubCategory] = useState('');
+  const [isCreatingNewCategory, setIsCreatingNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'grouped'>('grid');
+  const [collapsedCategories, setCollapsedCategories] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
@@ -175,17 +185,51 @@ export const AdminCatalog: React.FC = () => {
     'General',
   ];
 
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch =
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.code.toLowerCase().includes(search.toLowerCase()) ||
-      p.description.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory =
-      categoryFilter === 'all' ||
-      p.category.toLowerCase().includes(categoryFilter.toLowerCase()) ||
-      categoryFilter.toLowerCase().includes(p.category.toLowerCase());
-    return matchesSearch && matchesCategory;
-  });
+  const allCategories = useMemo(() => {
+    const set = new Set<string>(medicalCategories);
+    products.forEach((p) => {
+      if (p.category && p.category.trim()) set.add(p.category.trim());
+    });
+    return Array.from(set).sort();
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    const term = search.toLowerCase().trim();
+    return products.filter((p) => {
+      const matchesSearch =
+        !term ||
+        p.name.toLowerCase().includes(term) ||
+        p.code.toLowerCase().includes(term) ||
+        p.category.toLowerCase().includes(term) ||
+        (p.subCategory && p.subCategory.toLowerCase().includes(term)) ||
+        p.description.toLowerCase().includes(term);
+
+      const matchesCategory =
+        categoryFilter === 'all' ||
+        p.category.toLowerCase().includes(categoryFilter.toLowerCase()) ||
+        categoryFilter.toLowerCase().includes(p.category.toLowerCase());
+
+      return matchesSearch && matchesCategory;
+    });
+  }, [products, search, categoryFilter]);
+
+  const groupedProducts = useMemo(() => {
+    const groups: Record<string, Record<string, Product[]>> = {};
+    filteredProducts.forEach((p) => {
+      const cat = p.category || 'General';
+      const sub = p.subCategory || 'General / Estándar';
+      if (!groups[cat]) groups[cat] = {};
+      if (!groups[cat][sub]) groups[cat][sub] = [];
+      groups[cat][sub].push(p);
+    });
+    return groups;
+  }, [filteredProducts]);
+
+  const toggleCategoryCollapse = (cat: string) => {
+    setCollapsedCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  };
 
   const handleOpenNew = () => {
     setEditingProduct(null);
@@ -196,6 +240,9 @@ export const AdminCatalog: React.FC = () => {
     setDiscount(0);
     setDescription('');
     setCategory('Agujas y Jeringas');
+    setSubCategory('');
+    setIsCreatingNewCategory(false);
+    setNewCategoryName('');
     setImageUrl('https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&auto=format&fit=crop&q=80');
     setShowModal(true);
   };
@@ -209,6 +256,9 @@ export const AdminCatalog: React.FC = () => {
     setDiscount(p.discount);
     setDescription(p.description);
     setCategory(p.category || 'General');
+    setSubCategory(p.subCategory || '');
+    setIsCreatingNewCategory(false);
+    setNewCategoryName('');
     setImageUrl(p.imageUrl);
     setShowModal(true);
   };
@@ -233,6 +283,9 @@ export const AdminCatalog: React.FC = () => {
       return;
     }
 
+    const finalCategory = isCreatingNewCategory ? (newCategoryName.trim() || 'General') : category;
+    const finalSubCategory = subCategory.trim() || undefined;
+
     if (editingProduct) {
       updateProduct(editingProduct.id, {
         name,
@@ -241,8 +294,9 @@ export const AdminCatalog: React.FC = () => {
         stock: Number(stock) || 0,
         discount: Number(discount) || 0,
         description,
-        category,
-        imageUrl: imageUrl || getPlaceholderImageForCategory(category),
+        category: finalCategory,
+        subCategory: finalSubCategory,
+        imageUrl: imageUrl || getPlaceholderImageForCategory(finalCategory),
       });
     } else {
       addProduct({
@@ -252,8 +306,9 @@ export const AdminCatalog: React.FC = () => {
         stock: Number(stock) || 50,
         discount: Number(discount) || 0,
         description: description || 'Suministro médico y material de curación.',
-        category,
-        imageUrl: imageUrl || getPlaceholderImageForCategory(category),
+        category: finalCategory,
+        subCategory: finalSubCategory,
+        imageUrl: imageUrl || getPlaceholderImageForCategory(finalCategory),
       });
     }
 
@@ -333,6 +388,119 @@ export const AdminCatalog: React.FC = () => {
   const handleFetchFromSupabase = async () => {
     const res = await fetchProductsFromSupabase();
     setImportStatus({ text: res.message, isError: !res.success });
+  };
+
+  const renderProductCard = (prod: Product) => {
+    const hasDiscount = prod.discount > 0;
+    const finalPrice = prod.price * (1 - (prod.discount || 0) / 100);
+    const isSelected = selectedIds.includes(prod.id);
+
+    return (
+      <div
+        key={prod.id}
+        onClick={() => {
+          if (isSelectMode) handleToggleSelectProduct(prod.id);
+        }}
+        className={`bg-white rounded-2xl border overflow-hidden shadow-2xs hover:shadow-md transition flex flex-col justify-between group cursor-pointer sm:cursor-default ${
+          isSelected
+            ? 'border-[#C9B368] ring-2 ring-[#C9B368]/40 bg-amber-50/20'
+            : 'border-stone-200/90'
+        }`}
+      >
+        <div>
+          <div className="relative aspect-4/3 overflow-hidden bg-stone-100">
+            <img
+              src={prod.imageUrl}
+              alt={prod.name}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+            {hasDiscount && (
+              <span className="absolute top-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] sm:text-[10px] font-bold shadow-xs">
+                -{prod.discount}%
+              </span>
+            )}
+            {isSelectMode && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleSelectProduct(prod.id);
+                }}
+                className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md backdrop-blur-xs flex items-center justify-center transition shadow-xs cursor-pointer ${
+                  isSelected
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-white/90 text-stone-500 hover:text-stone-800'
+                }`}
+                title={isSelected ? 'Deseleccionar' : 'Seleccionar producto'}
+              >
+                {isSelected ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+              </button>
+            )}
+            <span className="absolute bottom-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-[#1B1A18]/80 text-[#C9B368] text-[9px] sm:text-[10px] font-mono font-bold backdrop-blur-xs">
+              {prod.code}
+            </span>
+          </div>
+
+          <div className="p-2.5 sm:p-4 space-y-1 sm:space-y-1.5">
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[10px] font-semibold text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded truncate max-w-[110px]">
+                {prod.category}
+              </span>
+              {prod.subCategory && (
+                <span className="text-[10px] font-bold text-[#1B1A18] bg-[#C9B368]/20 px-1.5 py-0.5 rounded truncate max-w-[110px]">
+                  {prod.subCategory}
+                </span>
+              )}
+              <span className="text-[10px] text-stone-400 ml-auto font-medium">
+                {prod.stock} disp.
+              </span>
+            </div>
+
+            <h3 className="text-xs sm:text-sm font-bold text-[#1B1A18] line-clamp-2 leading-tight">
+              {prod.name}
+            </h3>
+
+            <div className="pt-1.5 sm:pt-2 flex items-baseline gap-1.5">
+              <span className="text-xs sm:text-base font-bold text-[#1B1A18]">
+                ${finalPrice.toFixed(2)}
+              </span>
+              {hasDiscount && (
+                <span className="text-[10px] sm:text-xs text-stone-400 line-through">
+                  ${prod.price.toFixed(2)}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="p-2 sm:p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center justify-end gap-1.5 sm:gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenEdit(prod);
+            }}
+            className="p-1 sm:p-1.5 rounded-lg border border-stone-200 hover:bg-stone-100 text-stone-600 transition cursor-pointer"
+            title="Editar producto"
+          >
+            <Edit2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeleteModal({ type: 'single', product: prod });
+            }}
+            className="p-1 sm:p-1.5 rounded-lg border border-stone-200 hover:bg-rose-50 text-rose-500 hover:border-rose-300 transition cursor-pointer"
+            title="Eliminar producto de Supabase y del catálogo"
+          >
+            <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+          </button>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -600,20 +768,53 @@ export const AdminCatalog: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-stone-400" />
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="py-2.5 px-3 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] font-medium focus:outline-none focus:border-[#C9B368] w-full sm:w-auto"
-          >
-            <option value="all">Todas las Categorías Médicas</option>
-            {medicalCategories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {/* Category Filter */}
+          <div className="flex items-center gap-1.5 flex-1 sm:flex-none">
+            <Filter className="w-4 h-4 text-stone-400 shrink-0" />
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="py-2.5 px-3 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] font-medium focus:outline-none focus:border-[#C9B368] w-full sm:w-auto"
+            >
+              <option value="all">Todas las Categorías ({products.length})</option>
+              {allCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* View Mode Switcher */}
+          <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                viewMode === 'grid'
+                  ? 'bg-white text-[#1B1A18] shadow-xs'
+                  : 'text-stone-500 hover:text-stone-800'
+              }`}
+              title="Vista en cuadrícula"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Cuadrícula</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('grouped')}
+              className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                viewMode === 'grouped'
+                  ? 'bg-[#1B1A18] text-white shadow-xs'
+                  : 'text-stone-500 hover:text-stone-800'
+              }`}
+              title="Vista agrupada por categorías y subcategorías"
+            >
+              <FolderTree className="w-3.5 h-3.5 text-[#C9B368]" />
+              <span className="hidden sm:inline">Agrupado</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -659,116 +860,75 @@ export const AdminCatalog: React.FC = () => {
           <p className="text-sm font-semibold text-stone-700">No se encontraron productos con el filtro aplicado</p>
           <p className="text-xs text-stone-400 mt-1">Prueba con otra palabra clave o selecciona "Todas las Categorías".</p>
         </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
-          {filteredProducts.map((prod) => {
-            const hasDiscount = prod.discount > 0;
-            const finalPrice = prod.price * (1 - (prod.discount || 0) / 100);
-
-            const isSelected = selectedIds.includes(prod.id);
+      ) : viewMode === 'grouped' ? (
+        <div className="space-y-6">
+          {Object.entries(groupedProducts).map(([catName, subGroups]) => {
+            const isCollapsed = collapsedCategories.includes(catName);
+            const totalInCat = Object.values(subGroups).reduce((sum, list) => sum + list.length, 0);
 
             return (
-              <div
-                key={prod.id}
-                onClick={() => {
-                  if (isSelectMode) handleToggleSelectProduct(prod.id);
-                }}
-                className={`bg-white rounded-2xl border overflow-hidden shadow-2xs hover:shadow-md transition flex flex-col justify-between group cursor-pointer sm:cursor-default ${
-                  isSelected
-                    ? 'border-[#C9B368] ring-2 ring-[#C9B368]/40 bg-amber-50/20'
-                    : 'border-stone-200/90'
-                }`}
-              >
-                <div>
-                  <div className="relative aspect-4/3 overflow-hidden bg-stone-100">
-                    <img
-                      src={prod.imageUrl}
-                      alt={prod.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    {hasDiscount && (
-                      <span className="absolute top-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] sm:text-[10px] font-bold shadow-xs">
-                        -{prod.discount}%
-                      </span>
-                    )}
-                    {isSelectMode && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleSelectProduct(prod.id);
-                        }}
-                        className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md backdrop-blur-xs flex items-center justify-center transition shadow-xs cursor-pointer ${
-                          isSelected
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-white/90 text-stone-500 hover:text-stone-800'
-                        }`}
-                        title={isSelected ? 'Deseleccionar' : 'Seleccionar producto'}
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="w-4 h-4" />
-                        ) : (
-                          <Square className="w-4 h-4" />
-                        )}
-                      </button>
-                    )}
-                    <span className="absolute bottom-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-[#1B1A18]/80 text-[#C9B368] text-[9px] sm:text-[10px] font-mono font-bold backdrop-blur-xs">
-                      {prod.code}
-                    </span>
-                  </div>
-
-                  <div className="p-2.5 sm:p-4 space-y-1 sm:space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-stone-500">
-                      <span className="font-semibold text-stone-600 truncate max-w-[85px] sm:max-w-[130px]">
-                        {prod.category}
-                      </span>
-                      <span className="text-stone-500 font-medium">
-                        {prod.stock} disp.
-                      </span>
+              <div key={catName} className="bg-white rounded-3xl border border-stone-200/90 overflow-hidden shadow-2xs">
+                {/* Category Header Banner */}
+                <div
+                  onClick={() => toggleCategoryCollapse(catName)}
+                  className="p-4 sm:p-5 bg-[#FAF8F5] border-b border-stone-200/80 flex items-center justify-between cursor-pointer hover:bg-stone-100/80 transition select-none"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-[#1B1A18] text-[#C9B368] flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                      <FolderTree className="w-5 h-5" />
                     </div>
-
-                    <h3 className="text-xs sm:text-sm font-bold text-[#1B1A18] line-clamp-2 leading-tight">
-                      {prod.name}
-                    </h3>
-
-                    <div className="pt-1.5 sm:pt-2 flex items-baseline gap-1.5">
-                      <span className="text-xs sm:text-base font-bold text-[#1B1A18]">
-                        ${finalPrice.toFixed(2)}
-                      </span>
-                      {hasDiscount && (
-                        <span className="text-[10px] sm:text-xs text-stone-400 line-through">
-                          ${prod.price.toFixed(2)}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm sm:text-base font-bold text-[#1B1A18]">
+                          {catName}
+                        </h3>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#C9B368]/20 text-[#1B1A18] font-bold">
+                          {totalInCat} {totalInCat === 1 ? 'producto' : 'productos'}
                         </span>
-                      )}
+                      </div>
+                      <p className="text-xs text-stone-500">
+                        {Object.keys(subGroups).length} {Object.keys(subGroups).length === 1 ? 'subcategoría' : 'subcategorías'}
+                      </p>
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-stone-400">
+                    <span className="text-xs hidden sm:inline font-medium">
+                      {isCollapsed ? 'Ver productos' : 'Colapsar'}
+                    </span>
+                    {isCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                   </div>
                 </div>
 
-                <div className="p-2 sm:p-3 border-t border-stone-100 bg-[#FAF8F5]/60 flex items-center justify-end gap-1.5 sm:gap-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenEdit(prod);
-                    }}
-                    className="p-1 sm:p-1.5 rounded-lg border border-stone-200 hover:bg-stone-100 text-stone-600 transition cursor-pointer"
-                    title="Editar producto"
-                  >
-                    <Edit2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteModal({ type: 'single', product: prod });
-                    }}
-                    className="p-1 sm:p-1.5 rounded-lg border border-stone-200 hover:bg-rose-50 text-rose-500 hover:border-rose-300 transition cursor-pointer"
-                    title="Eliminar producto de Supabase y del catálogo"
-                  >
-                    <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                  </button>
-                </div>
+                {/* Subcategories and Product Cards */}
+                {!isCollapsed && (
+                  <div className="p-4 sm:p-6 space-y-6">
+                    {Object.entries(subGroups).map(([subName, prodsInSub]) => (
+                      <div key={subName} className="space-y-3">
+                        <div className="flex items-center gap-2 pb-1.5 border-b border-stone-100">
+                          <Tag className="w-3.5 h-3.5 text-[#C9B368]" />
+                          <h4 className="text-xs sm:text-sm font-bold text-stone-800">
+                            {subName}
+                          </h4>
+                          <span className="text-[11px] text-stone-400 font-medium">
+                            ({prodsInSub.length} {prodsInSub.length === 1 ? 'artículo' : 'artículos'})
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
+                          {prodsInSub.map((prod) => renderProductCard(prod))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
+          {filteredProducts.map((prod) => renderProductCard(prod))}
         </div>
       )}
 
@@ -936,23 +1096,63 @@ export const AdminCatalog: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-stone-700 mb-1">Categoría</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368] bg-white font-medium"
-                  >
-                    {medicalCategories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-stone-700">Categoría *</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCreatingNewCategory(!isCreatingNewCategory)}
+                      className="text-[11px] text-[#C9B368] font-bold hover:underline cursor-pointer"
+                    >
+                      {isCreatingNewCategory ? 'Seleccionar existente' : '+ Crear Nueva'}
+                    </button>
+                  </div>
+                  {isCreatingNewCategory ? (
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nombre de la nueva categoría..."
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-[#C9B368] focus:outline-none bg-amber-50/20 font-medium"
+                    />
+                  ) : (
+                    <select
+                      value={category}
+                      onChange={(e) => {
+                        if (e.target.value === '__new__') {
+                          setIsCreatingNewCategory(true);
+                        } else {
+                          setCategory(e.target.value);
+                        }
+                      }}
+                      className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368] bg-white font-medium"
+                    >
+                      {allCategories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                      <option value="__new__">+ Crear Nueva Categoría...</option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block font-bold text-stone-700 mb-1">Subir Imagen</label>
-                  <div className="flex items-center gap-2">
+                  <label className="block font-bold text-stone-700 mb-1">Subcategoría (Opcional)</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Desechable, Estéril, Pediátrico..."
+                    value={subCategory}
+                    onChange={(e) => setSubCategory(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368] bg-white font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">Foto del Producto (Subir o URL)</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
                     <input
                       type="file"
                       ref={fileInputRef}
@@ -963,24 +1163,31 @@ export const AdminCatalog: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="flex-1 py-2 px-3 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="w-full py-2.5 px-3 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 font-semibold flex items-center justify-center gap-1.5 cursor-pointer text-xs"
                     >
-                      <ImageIcon className="w-3.5 h-3.5 text-[#C9B368]" />
-                      Seleccionar Archivo
+                      <ImageIcon className="w-4 h-4 text-[#C9B368]" />
+                      Subir Foto desde Archivo
                     </button>
                   </div>
+                  <div>
+                    <input
+                      type="url"
+                      placeholder="O pegar URL de imagen..."
+                      value={imageUrl}
+                      onChange={(e) => setImageUrl(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368] text-xs"
+                    />
+                  </div>
                 </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-stone-700 mb-1">O pegar URL de Imagen</label>
-                <input
-                  type="url"
-                  placeholder="https://images.unsplash.com/..."
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368]"
-                />
+                {imageUrl && (
+                  <div className="mt-2 flex items-center gap-2 p-2 bg-stone-50 rounded-xl border border-stone-200">
+                    <img src={imageUrl} alt="Vista previa" className="w-10 h-10 object-cover rounded-lg border border-stone-200" />
+                    <span className="text-[11px] text-stone-500 truncate flex-1">{imageUrl}</span>
+                    <button type="button" onClick={() => setImageUrl('')} className="text-red-500 hover:text-red-700 p-1">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="pt-4 flex items-center justify-between border-t border-stone-100">

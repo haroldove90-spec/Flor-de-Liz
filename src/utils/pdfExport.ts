@@ -362,3 +362,193 @@ export const createWhatsAppEmployeeInviteLink = (employee: {
 
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
 };
+
+export const createWhatsAppClientInviteLink = (client: {
+  name: string;
+  businessName?: string;
+  phone: string;
+  whatsapp?: string;
+  username?: string;
+  password?: string;
+}) => {
+  const phone = client.whatsapp || client.phone || '';
+  let cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.length === 10) cleanPhone = `52${cleanPhone}`;
+  const appUrl = 'https://flor-de-liz-phi.vercel.app/';
+  const user = client.username || client.phone;
+  const pass = client.password || 'Cliente#2026';
+
+  let text = `🌸 *COMERCIALIZADORA FLOR DE LIZ* 🌸\n`;
+  text += `¡Hola *${client.name}*!\n\n`;
+  text += `Te damos la bienvenida a nuestro portal oficial de *Suministros Médicos y Material de Curación*.\n\n`;
+  text += `Ya puedes ingresar para consultar nuestro catálogo completo en línea, precios y realizar tus pedidos:\n\n`;
+  text += `🌐 *Enlace de la Plataforma:* ${appUrl}\n`;
+  text += `👤 *Usuario:* ${user}\n`;
+  text += `🔑 *Contraseña:* ${pass}\n\n`;
+  text += `_Guarda tus credenciales para acceder a tus cotizaciones y compras._ ¡Estamos a tus órdenes!`;
+
+  return cleanPhone
+    ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`
+    : `https://wa.me/?text=${encodeURIComponent(text)}`;
+};
+
+export const exportSalesNotePDF = async (order: Order) => {
+  const doc = new jsPDF({
+    unit: 'pt',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const logoData = await loadLogoDataUrl();
+
+  // Header Background banner
+  doc.setFillColor(27, 26, 24);
+  doc.rect(0, 0, pageWidth, 95, 'F');
+
+  // Gold accent line
+  doc.setFillColor(201, 179, 104);
+  doc.rect(0, 91, pageWidth, 4, 'F');
+
+  // Place official logo
+  let textStartX = 40;
+  if (logoData) {
+    try {
+      doc.addImage(logoData, 'PNG', 40, 14, 66, 66);
+      textStartX = 118;
+    } catch (e) {
+      console.warn('Error rendering logo in PDF:', e);
+    }
+  }
+
+  // Title & Brand
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(17);
+  doc.setFont('helvetica', 'bold');
+  doc.text('COMERCIALIZADORA FLOR DE LIZ', textStartX, 38);
+
+  doc.setFontSize(9.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(201, 179, 104);
+  doc.text('SUMINISTROS MÉDICOS Y MATERIAL DE CURACIÓN', textStartX, 54);
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(215, 215, 215);
+  doc.text('NOTA DE VENTA / ORDEN DE COMPRA OFICIAL', textStartX, 69);
+
+  doc.setFontSize(9);
+  doc.setTextColor(200, 200, 200);
+  doc.text(`Fecha: ${new Date(order.createdAt).toLocaleString('es-MX')}`, pageWidth - 40, 42, { align: 'right' });
+  doc.text(`Nota / Folio: #${order.orderNumber}`, pageWidth - 40, 60, { align: 'right' });
+
+  // Client Details Box
+  doc.setFillColor(250, 248, 245);
+  doc.setDrawColor(220, 215, 200);
+  doc.roundedRect(40, 115, pageWidth - 80, 85, 6, 6, 'FD');
+
+  doc.setTextColor(27, 26, 24);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DATOS DE LA OPERACIÓN Y CLIENTE', 55, 135);
+
+  doc.setFontSize(9.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Cliente: ${order.clientName}`, 55, 153);
+  if (order.clientBusiness) {
+    doc.text(`Empresa / Consultorio: ${order.clientBusiness}`, 55, 168);
+  }
+  doc.text(`Teléfono / WhatsApp: ${order.clientWhatsapp || order.clientPhone}`, 55, 183);
+
+  const rightColX = pageWidth / 2 + 10;
+  doc.text(`Dirección de Entrega: ${order.clientAddress || 'Entrega en sucursal'}`, rightColX, 153);
+  doc.text(`Canal / Vendedor: ${order.vendedorName || (order.source === 'cliente_whatsapp' ? 'Venta Directa Cliente' : 'Administración')}`, rightColX, 168);
+  doc.text(`Estatus del Pedido: ${order.status.toUpperCase()}`, rightColX, 183);
+
+  // Items Table Header
+  let startY = 225;
+  doc.setFillColor(27, 26, 24);
+  doc.rect(40, startY, pageWidth - 80, 24, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('SKU / CÓDIGO', 50, startY + 16);
+  doc.text('DESCRIPCIÓN DEL ARTÍCULO', 130, startY + 16);
+  doc.text('CANT.', 340, startY + 16, { align: 'right' });
+  doc.text('PRECIO UNIT.', 420, startY + 16, { align: 'right' });
+  doc.text('DESC.', 475, startY + 16, { align: 'right' });
+  doc.text('SUBTOTAL', pageWidth - 50, startY + 16, { align: 'right' });
+
+  // Items Rows
+  let curY = startY + 24;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+
+  order.items.forEach((item, index) => {
+    if (index % 2 === 0) {
+      doc.setFillColor(255, 255, 255);
+    } else {
+      doc.setFillColor(248, 246, 242);
+    }
+    doc.rect(40, curY, pageWidth - 80, 22, 'F');
+    doc.setDrawColor(235, 230, 220);
+    doc.line(40, curY + 22, pageWidth - 40, curY + 22);
+
+    doc.setTextColor(50, 50, 50);
+    doc.text(item.productCode || '---', 50, curY + 15);
+    
+    const truncatedName = item.productName.length > 34 ? `${item.productName.substring(0, 32)}...` : item.productName;
+    doc.text(truncatedName, 130, curY + 15);
+
+    doc.text(String(item.quantity), 340, curY + 15, { align: 'right' });
+    doc.text(`$${item.price.toFixed(2)}`, 420, curY + 15, { align: 'right' });
+    doc.text(item.discount > 0 ? `${item.discount}%` : '-', 475, curY + 15, { align: 'right' });
+    doc.text(`$${item.subtotal.toFixed(2)}`, pageWidth - 50, curY + 15, { align: 'right' });
+
+    curY += 22;
+  });
+
+  // Totals box
+  curY += 15;
+  const totalsBoxX = pageWidth - 240;
+  doc.setFillColor(250, 248, 245);
+  doc.roundedRect(totalsBoxX, curY, 200, 75, 4, 4, 'FD');
+
+  doc.setFontSize(9.5);
+  doc.setTextColor(80, 80, 80);
+  doc.text('Subtotal:', totalsBoxX + 15, curY + 20);
+  doc.text(`$${order.subtotal.toFixed(2)}`, pageWidth - 55, curY + 20, { align: 'right' });
+
+  if (order.discountTotal > 0) {
+    doc.setTextColor(190, 80, 40);
+    doc.text('Ahorro por Descuento:', totalsBoxX + 15, curY + 36);
+    doc.text(`-$${order.discountTotal.toFixed(2)}`, pageWidth - 55, curY + 36, { align: 'right' });
+  }
+
+  doc.setFillColor(201, 179, 104);
+  doc.rect(totalsBoxX + 10, curY + 45, 180, 1, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(27, 26, 24);
+  doc.text('TOTAL A PAGAR:', totalsBoxX + 15, curY + 62);
+  doc.text(`$${order.total.toFixed(2)} MXN`, pageWidth - 55, curY + 62, { align: 'right' });
+
+  // Notes if present
+  if (order.notes) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Observaciones / Dedicatoria: ${order.notes}`, 40, curY + 40);
+  }
+
+  // Footer
+  const footerY = doc.internal.pageSize.getHeight() - 35;
+  doc.setFillColor(27, 26, 24);
+  doc.rect(0, footerY - 5, pageWidth, 40, 'F');
+  doc.setTextColor(201, 179, 104);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Comercializadora Flor De Liz • Suministros Médicos y Material de Curación • WhatsApp: +52 1 55 1234 5678', pageWidth / 2, footerY + 12, { align: 'center' });
+
+  doc.save(`NotaDeVenta_${order.orderNumber}_FlorDeLiz.pdf`);
+};

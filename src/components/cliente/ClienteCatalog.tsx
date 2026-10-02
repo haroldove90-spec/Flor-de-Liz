@@ -40,10 +40,14 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
   }, [products]);
 
   const filtered = products.filter((p) => {
+    const term = search.toLowerCase().trim();
     const matchesSearch =
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.code.toLowerCase().includes(search.toLowerCase()) ||
-      p.description.toLowerCase().includes(search.toLowerCase());
+      !term ||
+      p.name.toLowerCase().includes(term) ||
+      p.code.toLowerCase().includes(term) ||
+      p.category.toLowerCase().includes(term) ||
+      (p.subCategory && p.subCategory.toLowerCase().includes(term)) ||
+      p.description.toLowerCase().includes(term);
     const matchesCat = selectedCategory === 'all' || p.category === selectedCategory;
     return matchesSearch && matchesCat;
   });
@@ -148,9 +152,16 @@ export const ClienteCatalog: React.FC<ClienteCatalogProps> = ({ onOpenCart }) =>
                         -{prod.discount}%
                       </span>
                     )}
-                    <span className="absolute bottom-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-[#1B1A18]/80 text-[#C9B368] text-[9px] sm:text-[10px] font-bold backdrop-blur-xs truncate max-w-[85%]">
-                      {prod.category}
-                    </span>
+                    <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1">
+                      <span className="px-1.5 py-0.5 rounded bg-[#1B1A18]/85 text-[#C9B368] text-[9px] font-bold backdrop-blur-xs truncate max-w-[50%]">
+                        {prod.category}
+                      </span>
+                      {prod.subCategory && (
+                        <span className="px-1.5 py-0.5 rounded bg-white/90 text-stone-900 text-[9px] font-bold backdrop-blur-xs truncate max-w-[45%]">
+                          {prod.subCategory}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="p-2.5 sm:p-4 space-y-1 sm:space-y-1.5">
