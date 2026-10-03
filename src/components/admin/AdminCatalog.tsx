@@ -271,7 +271,7 @@ export const AdminCatalog: React.FC = () => {
     setSubCategory('');
     setIsCreatingNewCategory(false);
     setNewCategoryName('');
-    setImageUrl('https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&auto=format&fit=crop&q=80');
+    setImageUrl('');
     setShowModal(true);
   };
 
@@ -327,7 +327,7 @@ export const AdminCatalog: React.FC = () => {
         description,
         category: finalCategory,
         subCategory: finalSubCategory,
-        imageUrl: imageUrl || getPlaceholderImageForCategory(finalCategory),
+        imageUrl: imageUrl.trim(),
       });
       setImportStatus({ text: res.message, isError: !res.success });
       setTimeout(() => setImportStatus(null), 4500);
@@ -342,7 +342,7 @@ export const AdminCatalog: React.FC = () => {
         description: description || 'Suministro médico y material de curación.',
         category: finalCategory,
         subCategory: finalSubCategory,
-        imageUrl: imageUrl || getPlaceholderImageForCategory(finalCategory),
+        imageUrl: imageUrl.trim(),
       });
       setImportStatus({ text: res.message, isError: !res.success });
       setTimeout(() => setImportStatus(null), 4500);
@@ -442,12 +442,22 @@ export const AdminCatalog: React.FC = () => {
         }`}
       >
         <div>
-          <div className="relative aspect-4/3 overflow-hidden bg-stone-100">
-            <img
-              src={prod.imageUrl}
-              alt={prod.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            />
+          <div className="relative aspect-4/3 overflow-hidden bg-stone-100 flex items-center justify-center">
+            {prod.imageUrl ? (
+              <img
+                src={prod.imageUrl}
+                alt={prod.name}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center bg-stone-100 text-stone-400 p-3 text-center">
+                <Package className="w-10 h-10 text-stone-300 stroke-1 mb-1" />
+                <span className="text-[10px] text-stone-400 font-medium">Sin imagen</span>
+              </div>
+            )}
             {hasDiscount && (
               <span className="absolute top-2 left-2 px-1.5 sm:px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] sm:text-[10px] font-bold shadow-xs">
                 -{prod.discount}%
@@ -1288,11 +1298,17 @@ export const AdminCatalog: React.FC = () => {
             <div className="p-5 sm:p-6 space-y-4 text-xs">
               {deleteModal.type === 'single' && deleteModal.product && (
                 <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200 flex items-center gap-3">
-                  <img
-                    src={deleteModal.product.imageUrl}
-                    alt={deleteModal.product.name}
-                    className="w-12 h-12 object-cover rounded-xl bg-white border border-stone-200 shrink-0"
-                  />
+                  {deleteModal.product.imageUrl ? (
+                    <img
+                      src={deleteModal.product.imageUrl}
+                      alt={deleteModal.product.name}
+                      className="w-12 h-12 object-cover rounded-xl bg-white border border-stone-200 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-stone-100 border border-stone-200 flex items-center justify-center shrink-0 text-stone-400">
+                      <Package className="w-6 h-6 stroke-1 text-stone-400" />
+                    </div>
+                  )}
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-[#1B1A18] truncate">{deleteModal.product.name}</p>
                     <p className="text-[11px] text-stone-500 font-mono">Código SKU: {deleteModal.product.code}</p>
