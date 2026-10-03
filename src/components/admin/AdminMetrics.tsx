@@ -233,7 +233,7 @@ export const AdminMetrics: React.FC = () => {
                     </div>
                   </div>
                   <span className="text-xs font-bold text-[#1B1A18]">
-                    ${p.total.toFixed(2)}
+                    ${(p.total ?? 0).toFixed(2)}
                   </span>
                 </div>
               ))

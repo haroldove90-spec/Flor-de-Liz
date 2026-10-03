@@ -137,10 +137,10 @@ export const exportOrderPDF = async (order: Order) => {
     const truncatedName = item.productName.length > 34 ? `${item.productName.substring(0, 32)}...` : item.productName;
     doc.text(truncatedName, 130, curY + 15);
 
-    doc.text(String(item.quantity), 340, curY + 15, { align: 'right' });
-    doc.text(`$${item.price.toFixed(2)}`, 420, curY + 15, { align: 'right' });
+    doc.text(String(item.quantity || 1), 340, curY + 15, { align: 'right' });
+    doc.text(`$${(item.price ?? 0).toFixed(2)}`, 420, curY + 15, { align: 'right' });
     doc.text(item.discount > 0 ? `${item.discount}%` : '-', 475, curY + 15, { align: 'right' });
-    doc.text(`$${item.subtotal.toFixed(2)}`, pageWidth - 50, curY + 15, { align: 'right' });
+    doc.text(`$${(item.subtotal ?? 0).toFixed(2)}`, pageWidth - 50, curY + 15, { align: 'right' });
 
     curY += 22;
   });
@@ -154,12 +154,12 @@ export const exportOrderPDF = async (order: Order) => {
   doc.setFontSize(9.5);
   doc.setTextColor(80, 80, 80);
   doc.text('Subtotal:', totalsBoxX + 15, curY + 20);
-  doc.text(`$${order.subtotal.toFixed(2)}`, pageWidth - 55, curY + 20, { align: 'right' });
+  doc.text(`$${(order.subtotal ?? 0).toFixed(2)}`, pageWidth - 55, curY + 20, { align: 'right' });
 
   if (order.discountTotal > 0) {
     doc.setTextColor(190, 80, 40);
     doc.text('Descuentos aplicados:', totalsBoxX + 15, curY + 36);
-    doc.text(`-$${order.discountTotal.toFixed(2)}`, pageWidth - 55, curY + 36, { align: 'right' });
+    doc.text(`-$${(order.discountTotal ?? 0).toFixed(2)}`, pageWidth - 55, curY + 36, { align: 'right' });
   }
 
   doc.setFillColor(201, 179, 104);
@@ -169,7 +169,7 @@ export const exportOrderPDF = async (order: Order) => {
   doc.setFontSize(12);
   doc.setTextColor(27, 26, 24);
   doc.text('TOTAL:', totalsBoxX + 15, curY + 62);
-  doc.text(`$${order.total.toFixed(2)} MXN`, pageWidth - 55, curY + 62, { align: 'right' });
+  doc.text(`$${(order.total ?? 0).toFixed(2)} MXN`, pageWidth - 55, curY + 62, { align: 'right' });
 
   // Notes if present
   if (order.notes) {
@@ -294,7 +294,7 @@ export const exportSalesReportPDF = async (orders: Order[], periodLabel = 'Gener
 
     doc.text(order.status, 400, curY + 13);
     doc.setFont('helvetica', 'bold');
-    doc.text(`$${order.total.toFixed(2)}`, pageWidth - 48, curY + 13, { align: 'right' });
+    doc.text(`$${(order.total ?? 0).toFixed(2)}`, pageWidth - 48, curY + 13, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
     curY += 19;
@@ -324,16 +324,16 @@ export const createWhatsAppOrderLink = (order: Order, recipientPhone?: string) =
   text += `Dirección de entrega: ${order.clientAddress}\n\n`;
   text += `📋 *Detalle de productos:*\n`;
 
-  order.items.forEach((item, idx) => {
+  (order.items || []).forEach((item, idx) => {
     const desc = item.discount > 0 ? ` (-${item.discount}%)` : '';
-    text += `${idx + 1}. ${item.productName} (${item.productCode}) x${item.quantity} = $${item.subtotal.toFixed(2)}${desc}\n`;
+    text += `${idx + 1}. ${item.productName} (${item.productCode || 'MED'}) x${item.quantity || 1} = $${(item.subtotal ?? 0).toFixed(2)}${desc}\n`;
   });
 
   if (order.discountTotal > 0) {
-    text += `\nSubtotal: $${order.subtotal.toFixed(2)}`;
-    text += `\nAhorro en descuentos: -$${order.discountTotal.toFixed(2)}`;
+    text += `\nSubtotal: $${(order.subtotal ?? 0).toFixed(2)}`;
+    text += `\nAhorro en descuentos: -$${(order.discountTotal ?? 0).toFixed(2)}`;
   }
-  text += `\n*TOTAL A PAGAR: $${order.total.toFixed(2)} MXN*\n\n`;
+  text += `\n*TOTAL A PAGAR: $${(order.total ?? 0).toFixed(2)} MXN*\n\n`;
   text += `¡Gracias por su preferencia! Suministros Médicos y Material de Curación.`;
 
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
@@ -499,10 +499,10 @@ export const exportSalesNotePDF = async (order: Order) => {
     const truncatedName = item.productName.length > 34 ? `${item.productName.substring(0, 32)}...` : item.productName;
     doc.text(truncatedName, 130, curY + 15);
 
-    doc.text(String(item.quantity), 340, curY + 15, { align: 'right' });
-    doc.text(`$${item.price.toFixed(2)}`, 420, curY + 15, { align: 'right' });
+    doc.text(String(item.quantity || 1), 340, curY + 15, { align: 'right' });
+    doc.text(`$${(item.price ?? 0).toFixed(2)}`, 420, curY + 15, { align: 'right' });
     doc.text(item.discount > 0 ? `${item.discount}%` : '-', 475, curY + 15, { align: 'right' });
-    doc.text(`$${item.subtotal.toFixed(2)}`, pageWidth - 50, curY + 15, { align: 'right' });
+    doc.text(`$${(item.subtotal ?? 0).toFixed(2)}`, pageWidth - 50, curY + 15, { align: 'right' });
 
     curY += 22;
   });
@@ -516,12 +516,12 @@ export const exportSalesNotePDF = async (order: Order) => {
   doc.setFontSize(9.5);
   doc.setTextColor(80, 80, 80);
   doc.text('Subtotal:', totalsBoxX + 15, curY + 20);
-  doc.text(`$${order.subtotal.toFixed(2)}`, pageWidth - 55, curY + 20, { align: 'right' });
+  doc.text(`$${(order.subtotal ?? 0).toFixed(2)}`, pageWidth - 55, curY + 20, { align: 'right' });
 
   if (order.discountTotal > 0) {
     doc.setTextColor(190, 80, 40);
     doc.text('Ahorro por Descuento:', totalsBoxX + 15, curY + 36);
-    doc.text(`-$${order.discountTotal.toFixed(2)}`, pageWidth - 55, curY + 36, { align: 'right' });
+    doc.text(`-$${(order.discountTotal ?? 0).toFixed(2)}`, pageWidth - 55, curY + 36, { align: 'right' });
   }
 
   doc.setFillColor(201, 179, 104);
@@ -531,7 +531,7 @@ export const exportSalesNotePDF = async (order: Order) => {
   doc.setFontSize(12);
   doc.setTextColor(27, 26, 24);
   doc.text('TOTAL A PAGAR:', totalsBoxX + 15, curY + 62);
-  doc.text(`$${order.total.toFixed(2)} MXN`, pageWidth - 55, curY + 62, { align: 'right' });
+  doc.text(`$${(order.total ?? 0).toFixed(2)} MXN`, pageWidth - 55, curY + 62, { align: 'right' });
 
   // Notes if present
   if (order.notes) {

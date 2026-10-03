@@ -40,8 +40,8 @@ interface AppContextType {
 
   // Products
   products: Product[];
-  addProduct: (product: Omit<Product, 'id' | 'createdAt'>) => Promise<void>;
-  updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
+  addProduct: (product: Omit<Product, 'id' | 'createdAt'>) => Promise<{ success: boolean; message: string }>;
+  updateProduct: (id: string, product: Partial<Product>) => Promise<{ success: boolean; message: string }>;
   deleteProduct: (id: string, code?: string) => Promise<{ success: boolean; message: string }>;
   deleteMultipleProducts: (ids: string[], codes?: string[]) => Promise<{ success: boolean; count: number; message: string }>;
   deleteAllProducts: () => Promise<{ success: boolean; count: number; message: string }>;
@@ -1543,7 +1543,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [supabaseConfig, activeRole]);
 
   // Product Operations with automatic Supabase sync
-  const addProduct = async (prod: Omit<Product, 'id' | 'createdAt'>) => {
+  const addProduct = async (prod: Omit<Product, 'id' | 'createdAt'>): Promise<{ success: boolean; message: string }> => {
     const newProd: Product = {
       ...prod,
       id: `prod_med_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -1554,38 +1554,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Save to Supabase
     try {
       const cleanUrl = supabaseConfig.url.replace(/\/$/, '');
-      const res = await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+      const fullPayload = {
+        id: newProd.id,
+        code: newProd.code,
+        name: newProd.name,
+        category: newProd.category,
+        sub_category: newProd.subCategory || '',
+        description: newProd.description || '',
+        price: Number(newProd.price || 0),
+        sale_price: Number(newProd.price || 0),
+        stock: Number(newProd.stock || 0),
+        current_stock: Number(newProd.stock || 0),
+        discount: Number(newProd.discount || 0),
+        image_url: newProd.imageUrl || '',
+        photo_url: newProd.imageUrl || '',
+        is_active: true,
+        created_at: newProd.createdAt,
+      };
+
+      const res = await fetch(`${cleanUrl}/flor_products?on_conflict=id`, {
         method: 'POST',
         headers: {
           apikey: supabaseConfig.anonKey,
           Authorization: `Bearer ${supabaseConfig.anonKey}`,
           'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates',
+          Prefer: 'resolution=merge-duplicates,return=representation',
         },
-        body: JSON.stringify([{
-          id: newProd.id,
-          code: newProd.code,
-          name: newProd.name,
-          price: newProd.price,
-          stock: newProd.stock,
-          discount: newProd.discount,
-          description: newProd.description,
-          category: newProd.category,
-          sub_category: newProd.subCategory || '',
-          image_url: newProd.imageUrl,
-          created_at: newProd.createdAt,
-        }]),
+        body: JSON.stringify([fullPayload]),
       });
 
       if (!res.ok) {
-        // Fallback compatibility with pre-migration column names
-        await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+        // Fallback for minimal column set
+        const fallbackRes = await fetch(`${cleanUrl}/flor_products`, {
           method: 'POST',
           headers: {
             apikey: supabaseConfig.anonKey,
             Authorization: `Bearer ${supabaseConfig.anonKey}`,
             'Content-Type': 'application/json',
-            Prefer: 'resolution=merge-duplicates',
+            Prefer: 'return=representation',
           },
           body: JSON.stringify([{
             id: newProd.id,
@@ -1593,19 +1599,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             category: newProd.category,
             code: newProd.code,
             description: newProd.description,
-            sale_price: newProd.price,
-            current_stock: newProd.stock,
-            photo_url: newProd.imageUrl,
+            sale_price: Number(newProd.price || 0),
+            current_stock: Number(newProd.stock || 0),
+            photo_url: newProd.imageUrl || '',
           }]),
         });
+
+        if (!fallbackRes.ok) {
+          const errText = await fallbackRes.text();
+          console.warn('Supabase fallback addProduct failed:', errText);
+          return { success: false, message: `Guardado localmente. Error en Supabase: ${errText}` };
+        }
       }
+
       setSupabaseProductsCount((prev) => (prev !== null ? prev + 1 : 1));
-    } catch (err) {
+      return { success: true, message: 'Producto guardado exitosamente en Supabase.' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error de red';
       console.warn('Background sync addProduct failed:', err);
+      return { success: false, message: `Guardado localmente. Error de conexión con Supabase: ${msg}` };
     }
   };
 
-  const updateProduct = async (id: string, updated: Partial<Product>) => {
+  const updateProduct = async (id: string, updated: Partial<Product>): Promise<{ success: boolean; message: string }> => {
     setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...updated } : p)));
 
     // Patch to Supabase
@@ -1614,15 +1630,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const payload: Record<string, unknown> = {};
       if (updated.name !== undefined) payload.name = updated.name;
       if (updated.code !== undefined) payload.code = updated.code;
-      if (updated.price !== undefined) payload.price = updated.price;
-      if (updated.stock !== undefined) payload.stock = updated.stock;
-      if (updated.discount !== undefined) payload.discount = updated.discount;
+      if (updated.price !== undefined) {
+        payload.price = Number(updated.price);
+        payload.sale_price = Number(updated.price);
+      }
+      if (updated.stock !== undefined) {
+        payload.stock = Number(updated.stock);
+        payload.current_stock = Number(updated.stock);
+      }
+      if (updated.discount !== undefined) payload.discount = Number(updated.discount);
       if (updated.description !== undefined) payload.description = updated.description;
       if (updated.category !== undefined) payload.category = updated.category;
       if (updated.subCategory !== undefined) payload.sub_category = updated.subCategory;
-      if (updated.imageUrl !== undefined) payload.image_url = updated.imageUrl;
+      if (updated.imageUrl !== undefined) {
+        payload.image_url = updated.imageUrl;
+        payload.photo_url = updated.imageUrl;
+      }
 
-      const res = await fetch(`${cleanUrl}/flor_products?id=eq.${id}`, {
+      const res = await fetch(`${cleanUrl}/flor_products?id=eq.${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: {
           apikey: supabaseConfig.anonKey,
@@ -1636,12 +1661,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const compatPayload: Record<string, unknown> = {};
         if (updated.name !== undefined) compatPayload.name = updated.name;
         if (updated.code !== undefined) compatPayload.code = updated.code;
-        if (updated.price !== undefined) compatPayload.sale_price = updated.price;
-        if (updated.stock !== undefined) compatPayload.current_stock = updated.stock;
+        if (updated.price !== undefined) compatPayload.sale_price = Number(updated.price);
+        if (updated.stock !== undefined) compatPayload.current_stock = Number(updated.stock);
         if (updated.description !== undefined) compatPayload.description = updated.description;
         if (updated.category !== undefined) compatPayload.category = updated.category;
         if (updated.imageUrl !== undefined) compatPayload.photo_url = updated.imageUrl;
-        await fetch(`${cleanUrl}/flor_products?id=eq.${id}`, {
+        await fetch(`${cleanUrl}/flor_products?id=eq.${encodeURIComponent(id)}`, {
           method: 'PATCH',
           headers: {
             apikey: supabaseConfig.anonKey,
@@ -1651,8 +1676,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           body: JSON.stringify(compatPayload),
         });
       }
-    } catch (err) {
+      return { success: true, message: 'Producto actualizado exitosamente en Supabase.' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error';
       console.warn('Background sync updateProduct failed:', err);
+      return { success: false, message: `Actualizado localmente. Error en Supabase: ${msg}` };
     }
   };
 
@@ -3060,12 +3088,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           code,
           name: p.name || 'Producto Médico',
           price: isNaN(Number(p.price)) ? 0 : Number(p.price),
+          sale_price: isNaN(Number(p.price)) ? 0 : Number(p.price),
           stock: isNaN(Number(p.stock)) ? 50 : Number(p.stock),
+          current_stock: isNaN(Number(p.stock)) ? 50 : Number(p.stock),
           discount: isNaN(Number(p.discount)) ? 0 : Math.min(100, Math.max(0, Number(p.discount))),
           description: p.description || 'Material de curación y suministros médicos.',
           category: p.category || 'Suministros Médicos',
           sub_category: p.subCategory || '',
           image_url: p.imageUrl || '',
+          photo_url: p.imageUrl || '',
+          is_active: true,
           created_at: p.createdAt || new Date().toISOString(),
         });
       }
@@ -3077,7 +3109,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const chunk = uniquePayload.slice(i, i + chunkSize);
 
         try {
-          const res = await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+          const res = await fetch(`${cleanUrl}/flor_products?on_conflict=id`, {
             method: 'POST',
             headers: {
               apikey: supabaseConfig.anonKey,
@@ -3102,7 +3134,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               current_stock: item.stock,
               photo_url: item.image_url,
             }));
-            const compatRes = await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+            const compatRes = await fetch(`${cleanUrl}/flor_products?on_conflict=id`, {
               method: 'POST',
               headers: {
                 apikey: supabaseConfig.anonKey,
@@ -3119,7 +3151,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               // If the bulk batch fails, fall back to individual upserts so no valid record is missed!
               for (const singleItem of chunk) {
               try {
-                const singleRes = await fetch(`${cleanUrl}/flor_products?on_conflict=code`, {
+                const singleRes = await fetch(`${cleanUrl}/flor_products?on_conflict=id`, {
                   method: 'POST',
                   headers: {
                     apikey: supabaseConfig.anonKey,

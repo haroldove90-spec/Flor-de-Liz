@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Package,
   Search,
@@ -24,14 +24,33 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
 
-  // Dynamically derive categories from products
-  const categories = useMemo(() => {
-    const set = new Set<string>();
+  // Detectar y listar ÚNICAMENTE categorías que contienen productos (count > 0)
+  const activeCategoriesWithCount = useMemo(() => {
+    const counts = new Map<string, number>();
     products.forEach((p) => {
-      if (p.category) set.add(p.category);
+      const cat = (p.category || '').trim();
+      if (cat) {
+        counts.set(cat, (counts.get(cat) || 0) + 1);
+      }
     });
-    return ['all', ...Array.from(set)];
+
+    return Array.from(counts.entries())
+      .filter(([_, count]) => count > 0)
+      .sort((a, b) => a[0].localeCompare(b[0], 'es', { sensitivity: 'base' }))
+      .map(([name, count]) => ({ name, count }));
   }, [products]);
+
+  // Si la categoría seleccionada ya no tiene productos, resetear a 'all'
+  useEffect(() => {
+    if (selectedCategory !== 'all') {
+      const exists = activeCategoriesWithCount.some(
+        (c) => c.name.toLowerCase() === selectedCategory.toLowerCase()
+      );
+      if (!exists) {
+        setSelectedCategory('all');
+      }
+    }
+  }, [activeCategoriesWithCount, selectedCategory]);
 
   const filtered = products.filter((p) => {
     const term = search.toLowerCase().trim();
@@ -42,7 +61,10 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
       p.category.toLowerCase().includes(term) ||
       (p.subCategory && p.subCategory.toLowerCase().includes(term)) ||
       p.description.toLowerCase().includes(term);
-    const matchesCat = selectedCategory === 'all' || p.category === selectedCategory;
+    const matchesCat =
+      selectedCategory === 'all' ||
+      p.category.toLowerCase().includes(selectedCategory.toLowerCase()) ||
+      selectedCategory.toLowerCase().includes(p.category.toLowerCase());
     return matchesSearch && matchesCat;
   });
 
@@ -93,7 +115,7 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1B1A18] hover:bg-stone-800 text-white text-xs sm:text-sm font-bold shadow-md transition cursor-pointer self-start sm:self-auto"
             >
               <ShoppingCart className="w-4 h-4 text-[#C9B368]" />
-              Ver Carrito ({cartItemCount}) • ${cartTotal.toFixed(2)} MXN
+              Ver Carrito ({cartItemCount}) • ${(cartTotal ?? 0).toFixed(2)} MXN
             </button>
           )}
         </div>
@@ -112,20 +134,20 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {categories.slice(0, 10).map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-                selectedCategory === cat
-                  ? 'bg-[#1B1A18] text-white'
-                  : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
-              }`}
-            >
-              {cat === 'all' ? 'Todos' : cat}
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+          <Filter className="w-4 h-4 text-stone-400 shrink-0" />
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="w-full sm:w-auto py-2.5 px-3 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] font-medium focus:outline-none focus:border-[#C9B368] cursor-pointer"
+          >
+            <option value="all">Todas las Categorías ({products.length})</option>
+            {activeCategoriesWithCount.map(({ name, count }) => (
+              <option key={name} value={name}>
+                {name} ({count})
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -205,11 +227,11 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
 
                     <div className="pt-1.5 sm:pt-2 flex items-baseline gap-1.5">
                       <span className="text-xs sm:text-base font-bold text-[#1B1A18]">
-                        ${finalPrice.toFixed(2)} MXN
+                        ${(finalPrice ?? 0).toFixed(2)} MXN
                       </span>
                       {hasDiscount && (
                         <span className="text-[10px] sm:text-xs text-stone-400 line-through">
-                          ${prod.price.toFixed(2)}
+                          ${(prod.price ?? 0).toFixed(2)}
                         </span>
                       )}
                     </div>

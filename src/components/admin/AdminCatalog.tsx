@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   Package,
   Plus,
@@ -185,13 +185,41 @@ export const AdminCatalog: React.FC = () => {
     'General',
   ];
 
-  const allCategories = useMemo(() => {
-    const set = new Set<string>(medicalCategories);
+  // Detectar y listar ÚNICAMENTE categorías que contienen productos (count > 0)
+  const activeCategoriesWithCount = useMemo(() => {
+    const counts = new Map<string, number>();
     products.forEach((p) => {
-      if (p.category && p.category.trim()) set.add(p.category.trim());
+      const cat = (p.category || '').trim();
+      if (cat) {
+        counts.set(cat, (counts.get(cat) || 0) + 1);
+      }
     });
-    return Array.from(set).sort();
+
+    return Array.from(counts.entries())
+      .filter(([_, count]) => count > 0)
+      .sort((a, b) => a[0].localeCompare(b[0], 'es', { sensitivity: 'base' }))
+      .map(([name, count]) => ({ name, count }));
   }, [products]);
+
+  // Si la categoría seleccionada actualmente ya no tiene productos, resetear a 'all'
+  useEffect(() => {
+    if (categoryFilter !== 'all') {
+      const exists = activeCategoriesWithCount.some(
+        (c) => c.name.toLowerCase() === categoryFilter.toLowerCase()
+      );
+      if (!exists) {
+        setCategoryFilter('all');
+      }
+    }
+  }, [activeCategoriesWithCount, categoryFilter]);
+
+  // Categorías completas para el selector del modal de crear / editar producto
+  const formCategories = useMemo(() => {
+    const set = new Set<string>();
+    activeCategoriesWithCount.forEach((c) => set.add(c.name));
+    medicalCategories.forEach((cat) => set.add(cat));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [activeCategoriesWithCount]);
 
   const filteredProducts = useMemo(() => {
     const term = search.toLowerCase().trim();
@@ -276,7 +304,7 @@ export const AdminCatalog: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || price === '') {
       alert('Ingresa el nombre y precio del producto.');
@@ -286,8 +314,11 @@ export const AdminCatalog: React.FC = () => {
     const finalCategory = isCreatingNewCategory ? (newCategoryName.trim() || 'General') : category;
     const finalSubCategory = subCategory.trim() || undefined;
 
+    setShowModal(false);
+
     if (editingProduct) {
-      updateProduct(editingProduct.id, {
+      setImportStatus({ text: `Actualizando "${name}" en Supabase...` });
+      const res = await updateProduct(editingProduct.id, {
         name,
         code,
         price: Number(price),
@@ -298,8 +329,11 @@ export const AdminCatalog: React.FC = () => {
         subCategory: finalSubCategory,
         imageUrl: imageUrl || getPlaceholderImageForCategory(finalCategory),
       });
+      setImportStatus({ text: res.message, isError: !res.success });
+      setTimeout(() => setImportStatus(null), 4500);
     } else {
-      addProduct({
+      setImportStatus({ text: `Guardando "${name}" en Supabase...` });
+      const res = await addProduct({
         name,
         code: code || `MED-${Date.now().toString().slice(-4)}`,
         price: Number(price),
@@ -310,9 +344,9 @@ export const AdminCatalog: React.FC = () => {
         subCategory: finalSubCategory,
         imageUrl: imageUrl || getPlaceholderImageForCategory(finalCategory),
       });
+      setImportStatus({ text: res.message, isError: !res.success });
+      setTimeout(() => setImportStatus(null), 4500);
     }
-
-    setShowModal(false);
   };
 
   // Upload Excel / CSV file from disk and automatically sync to Supabase
@@ -466,11 +500,11 @@ export const AdminCatalog: React.FC = () => {
 
             <div className="pt-1.5 sm:pt-2 flex items-baseline gap-1.5">
               <span className="text-xs sm:text-base font-bold text-[#1B1A18]">
-                ${finalPrice.toFixed(2)}
+                ${(finalPrice ?? 0).toFixed(2)}
               </span>
               {hasDiscount && (
                 <span className="text-[10px] sm:text-xs text-stone-400 line-through">
-                  ${prod.price.toFixed(2)}
+                  ${(prod.price ?? 0).toFixed(2)}
                 </span>
               )}
             </div>
@@ -778,9 +812,9 @@ export const AdminCatalog: React.FC = () => {
               className="py-2.5 px-3 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] font-medium focus:outline-none focus:border-[#C9B368] w-full sm:w-auto"
             >
               <option value="all">Todas las Categorías ({products.length})</option>
-              {allCategories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+              {activeCategoriesWithCount.map(({ name, count }) => (
+                <option key={name} value={name}>
+                  {name} ({count})
                 </option>
               ))}
             </select>
@@ -1127,7 +1161,7 @@ export const AdminCatalog: React.FC = () => {
                       }}
                       className="w-full p-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-[#C9B368] bg-white font-medium"
                     >
-                      {allCategories.map((c) => (
+                      {formCategories.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
@@ -1262,7 +1296,7 @@ export const AdminCatalog: React.FC = () => {
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-[#1B1A18] truncate">{deleteModal.product.name}</p>
                     <p className="text-[11px] text-stone-500 font-mono">Código SKU: {deleteModal.product.code}</p>
-                    <p className="text-[11px] text-stone-500">Precio: ${deleteModal.product.price.toFixed(2)} MXN</p>
+                    <p className="text-[11px] text-stone-500">Precio: ${(deleteModal.product.price ?? 0).toFixed(2)} MXN</p>
                   </div>
                 </div>
               )}

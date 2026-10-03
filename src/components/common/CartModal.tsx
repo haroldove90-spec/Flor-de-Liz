@@ -142,9 +142,9 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
       : (order.clientWhatsapp || order.clientPhone || whatsappSupportNumber || adminProfile.whatsapp || '5512345678');
     const cleanPhone = targetPhone.replace(/\D/g, '');
 
-    const itemsSummary = order.items
+    const itemsSummary = (order.items || [])
       .map(
-        (i) => `• ${i.quantity}x ${i.productName} ($${i.subtotal.toFixed(2)})`
+        (i) => `• ${i.quantity}x ${i.productName} ($${(i.subtotal ?? 0).toFixed(2)})`
       )
       .join('\n');
 
@@ -155,9 +155,9 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
       `*Teléfono:* ${order.clientPhone}\n` +
       `*Dirección:* ${order.clientAddress}\n\n` +
       `*DETALLE DE PRODUCTOS:*\n${itemsSummary}\n\n` +
-      `*Subtotal:* $${order.subtotal.toFixed(2)} MXN\n` +
-      (order.discountTotal > 0 ? `*Descuento:* -$${order.discountTotal.toFixed(2)} MXN\n` : '') +
-      `*TOTAL:* $${order.total.toFixed(2)} MXN\n` +
+      `*Subtotal:* $${(order.subtotal ?? 0).toFixed(2)} MXN\n` +
+      (order.discountTotal > 0 ? `*Descuento:* -$${(order.discountTotal ?? 0).toFixed(2)} MXN\n` : '') +
+      `*TOTAL:* $${(order.total ?? 0).toFixed(2)} MXN\n` +
       `*Estatus inicial:* ${order.status}\n` +
       (order.notes ? `*Notas:* ${order.notes}\n\n` : '\n') +
       `_Enviado desde Comercializadora Flor De Liz_`;
@@ -206,7 +206,7 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
                 Folio oficial: <strong className="text-[#1B1A18]">#{completedOrder.orderNumber}</strong>
               </p>
               <p className="text-xs text-stone-500 mt-0.5">
-                Total del pedido: <strong>${completedOrder.total.toFixed(2)} MXN</strong>
+                Total del pedido: <strong>${(completedOrder.total ?? 0).toFixed(2)} MXN</strong>
               </p>
             </div>
 
@@ -278,7 +278,7 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-[#1B1A18] truncate">{product.name}</p>
                         <p className="text-[11px] text-stone-500">
-                          SKU: {product.code} • ${product.price.toFixed(2)}
+                          SKU: {product.code} • ${(product.price ?? 0).toFixed(2)}
                           {product.discount > 0 && (
                             <span className="ml-1 text-emerald-600 font-semibold">
                               (-{product.discount}%)
@@ -286,7 +286,7 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
                           )}
                         </p>
                         <p className="text-xs font-bold text-[#1B1A18] mt-0.5">
-                          ${itemTotal.toFixed(2)} MXN
+                          ${(itemTotal ?? 0).toFixed(2)} MXN
                         </p>
                       </div>
                     </div>
@@ -402,7 +402,7 @@ export const CartModal: React.FC<CartModalProps> = ({ isOpen, onClose }) => {
               <div className="flex items-center justify-between text-sm">
                 <span className="font-semibold text-stone-600">Total a Pagar:</span>
                 <span className="text-xl font-bold text-[#1B1A18]">
-                  ${cartTotal.toFixed(2)} MXN
+                  ${(cartTotal ?? 0).toFixed(2)} MXN
                 </span>
               </div>
 
