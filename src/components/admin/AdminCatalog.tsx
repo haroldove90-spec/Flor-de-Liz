@@ -37,6 +37,7 @@ import {
   getPlaceholderImageForCategory,
   exportProductsToExcel,
 } from '../../utils/excelImport';
+import { matchesProductSearch } from '../../utils/searchUtils';
 
 export const AdminCatalog: React.FC = () => {
   const {
@@ -222,15 +223,8 @@ export const AdminCatalog: React.FC = () => {
   }, [activeCategoriesWithCount]);
 
   const filteredProducts = useMemo(() => {
-    const term = search.toLowerCase().trim();
     return products.filter((p) => {
-      const matchesSearch =
-        !term ||
-        p.name.toLowerCase().includes(term) ||
-        p.code.toLowerCase().includes(term) ||
-        p.category.toLowerCase().includes(term) ||
-        (p.subCategory && p.subCategory.toLowerCase().includes(term)) ||
-        p.description.toLowerCase().includes(term);
+      const matchesSearch = matchesProductSearch(p, search);
 
       const matchesCategory =
         categoryFilter === 'all' ||
@@ -805,7 +799,7 @@ export const AdminCatalog: React.FC = () => {
           <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Buscar aguja, jeringa, gasa, alcohol, solución, SKU..."
+            placeholder="Buscar por código (SKU), precio ($), nombre, categoría o descripción..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] focus:outline-none focus:border-[#C9B368]"

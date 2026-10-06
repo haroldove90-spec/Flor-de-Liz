@@ -12,6 +12,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { Product } from '../../types';
 import { exportProductsToExcel } from '../../utils/excelImport';
+import { matchesProductSearch } from '../../utils/searchUtils';
 
 interface VendedorCatalogProps {
   onOpenCart: () => void;
@@ -53,14 +54,7 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
   }, [activeCategoriesWithCount, selectedCategory]);
 
   const filtered = products.filter((p) => {
-    const term = search.toLowerCase().trim();
-    const matchesSearch =
-      !term ||
-      p.name.toLowerCase().includes(term) ||
-      p.code.toLowerCase().includes(term) ||
-      p.category.toLowerCase().includes(term) ||
-      (p.subCategory && p.subCategory.toLowerCase().includes(term)) ||
-      p.description.toLowerCase().includes(term);
+    const matchesSearch = matchesProductSearch(p, search);
     const matchesCat =
       selectedCategory === 'all' ||
       p.category.toLowerCase().includes(selectedCategory.toLowerCase()) ||
@@ -127,7 +121,7 @@ export const VendedorCatalog: React.FC<VendedorCatalogProps> = ({ onOpenCart }) 
           <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Buscar por aguja, jeringa, gasa, alcohol, SKU o nombre..."
+            placeholder="Buscar por código (SKU), precio ($), nombre, categoría o descripción..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 bg-white text-xs text-[#1B1A18] focus:outline-none focus:border-[#C9B368]"

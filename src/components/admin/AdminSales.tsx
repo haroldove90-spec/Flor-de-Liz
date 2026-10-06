@@ -739,7 +739,7 @@ export const AdminSales: React.FC = () => {
                     >
                       {products.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} (${(p.price ?? 0).toFixed(2)}) - Stock: {p.stock ?? 0}
+                          {p.code ? `[${p.code}] ` : ''}{p.name} (${(p.price ?? 0).toFixed(2)}) - Stock: {p.stock ?? 0}
                         </option>
                       ))}
                     </select>
